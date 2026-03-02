@@ -71,6 +71,18 @@ variable "max_pricing_items" {
   default     = "-1"
 }
 
+variable "enable_spot_collector" {
+  description = "Enable the Azure Spot pricing & eviction collector"
+  type        = bool
+  default     = true
+}
+
+variable "max_spot_items" {
+  description = "Maximum spot items to collect per job (-1 = unlimited)"
+  type        = string
+  default     = "-1"
+}
+
 variable "cron_expression" {
   description = "Cron expression for the scheduled ingestion job (UTC)"
   type        = string

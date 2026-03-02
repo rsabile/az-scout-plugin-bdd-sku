@@ -5,11 +5,10 @@ All collectors must implement this interface to ensure consistent behavior
 and orchestration with the PostgreSQL backend.
 """
 
-from abc import ABC, abstractmethod
-from datetime import datetime, timezone
-from typing import Any
-
 import logging
+from abc import ABC, abstractmethod
+from datetime import UTC, datetime
+from typing import Any
 
 
 class BaseCollector(ABC):
@@ -106,13 +105,13 @@ class BaseCollector(ABC):
         Returns:
             Dictionary containing execution results and statistics.
         """
-        self.start_time = datetime.now(timezone.utc)
+        self.start_time = datetime.now(UTC)
 
         try:
             self.logger.info("Starting %s data collection", self.collector_name)
             self.initialize(pg_conn)
             self.total_ingested = self.collect_data(pg_conn)
-            self.end_time = datetime.now(timezone.utc)
+            self.end_time = datetime.now(UTC)
             duration = (self.end_time - self.start_time).total_seconds()
 
             result: dict[str, Any] = {
@@ -138,7 +137,7 @@ class BaseCollector(ABC):
             return result
 
         except Exception as exc:
-            self.end_time = datetime.now(timezone.utc)
+            self.end_time = datetime.now(UTC)
             duration = (self.end_time - self.start_time).total_seconds() if self.start_time else 0
 
             self.logger.error(
@@ -178,7 +177,7 @@ class BaseCollector(ABC):
         """Return current collection statistics."""
         duration = 0.0
         if self.start_time:
-            end = self.end_time or datetime.now(timezone.utc)
+            end = self.end_time or datetime.now(UTC)
             duration = (end - self.start_time).total_seconds()
 
         return {

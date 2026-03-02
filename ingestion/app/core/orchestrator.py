@@ -9,12 +9,13 @@ import logging
 import sys
 import traceback
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
+from collectors.azure_pricing_collector import AzurePricingCollector
+from collectors.azure_spot_collector import AzureSpotCollector
 from shared.config import ConfigManager
 from shared.pg_client import PGClientManager
-from collectors.azure_pricing_collector import AzurePricingCollector
 
 
 class JobOrchestrator:
@@ -31,7 +32,7 @@ class JobOrchestrator:
 
         # Job metadata
         self.job_id = str(uuid.uuid4())
-        self.job_datetime = datetime.now(timezone.utc)
+        self.job_datetime = datetime.now(UTC)
         global_cfg = self.config_manager.get_global_config()
         self.job_type: str = global_cfg["job_type"]
 
@@ -46,7 +47,7 @@ class JobOrchestrator:
         )
 
         # State
-        self.collectors: dict[str, AzurePricingCollector] = {}
+        self.collectors: dict[str, AzurePricingCollector | AzureSpotCollector] = {}
         self.results: list[dict[str, Any]] = []
 
         self.logger.info("Job Orchestrator initialized – Job ID: %s", self.job_id)
@@ -63,7 +64,16 @@ class JobOrchestrator:
             collector_config = self.config_manager.get_collector_config(name)
 
             if name == "azure_pricing":
-                collector = AzurePricingCollector(
+                collector: AzurePricingCollector | AzureSpotCollector = (
+                    AzurePricingCollector(
+                        job_id=self.job_id,
+                        job_datetime=self.job_datetime,
+                        job_type=self.job_type,
+                        config=collector_config,
+                    )
+                )
+            elif name == "azure_spot":
+                collector = AzureSpotCollector(
                     job_id=self.job_id,
                     job_datetime=self.job_datetime,
                     job_type=self.job_type,
@@ -80,7 +90,7 @@ class JobOrchestrator:
             collector_names = self.config_manager.get_collectors_to_run()
 
         self.logger.info("Starting job with collectors: %s", collector_names)
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
 
         try:
             pg_conn = self.pg_client_manager.get_connection()
@@ -89,14 +99,14 @@ class JobOrchestrator:
             self._initialize_collectors(collector_names)
 
             for name in collector_names:
-                collector_start = datetime.now(timezone.utc)
+                collector_start = datetime.now(UTC)
                 try:
                     self.logger.info("Running %s …", name)
                     result = self.collectors[name].run(pg_conn)
                     self.results.append(result)
                     self.logger.info("%s completed successfully", name)
                 except Exception as exc:
-                    collector_end = datetime.now(timezone.utc)
+                    collector_end = datetime.now(UTC)
                     duration = (collector_end - collector_start).total_seconds()
                     self.results.append(
                         {
@@ -113,7 +123,7 @@ class JobOrchestrator:
                     )
                     self.logger.error("%s failed: %s", name, exc)
 
-            end_time = datetime.now(timezone.utc)
+            end_time = datetime.now(UTC)
             total_duration = (end_time - start_time).total_seconds()
 
             ok = [r for r in self.results if r["status"] == "success"]
@@ -131,7 +141,7 @@ class JobOrchestrator:
             return self.results
 
         except Exception as exc:
-            end_time = datetime.now(timezone.utc)
+            end_time = datetime.now(UTC)
             total_duration = (end_time - start_time).total_seconds()
             self.logger.error("Job failed after %.1fs: %s", total_duration, exc)
             raise
@@ -175,7 +185,7 @@ def main() -> None:
 
     logger = logging.getLogger(__name__)
     logger.info("=== Pricing Data Ingestion Starting ===")
-    logger.info("Timestamp: %s", datetime.now(timezone.utc).isoformat())
+    logger.info("Timestamp: %s", datetime.now(UTC).isoformat())
 
     orchestrator: JobOrchestrator | None = None
     exit_code = 0

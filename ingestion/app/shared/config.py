@@ -89,6 +89,14 @@ class ConfigManager:
             "azure_pricing_api_retry_attempts": os.getenv("AZURE_PRICING_API_RETRY_ATTEMPTS", "3"),
             "azure_pricing_api_retry_delay": os.getenv("AZURE_PRICING_API_RETRY_DELAY", "2.0"),
             "azure_pricing_filters": os.getenv("AZURE_PRICING_FILTERS", "{}"),
+            # Azure Spot Collector
+            "enable_azure_spot_collector": os.getenv(
+                "ENABLE_AZURE_SPOT_COLLECTOR", "false"
+            ).lower()
+            == "true",
+            "azure_spot_max_items": os.getenv("AZURE_SPOT_MAX_ITEMS", "-1"),
+            "azure_spot_api_retry_attempts": os.getenv("AZURE_SPOT_API_RETRY_ATTEMPTS", "3"),
+            "azure_spot_api_retry_delay": os.getenv("AZURE_SPOT_API_RETRY_DELAY", "2.0"),
             # Logging
             "log_level": os.getenv("LOG_LEVEL", "INFO"),
         }
@@ -122,6 +130,14 @@ class ConfigManager:
                     "filters_json": self.get_json("azure_pricing_filters", "{}"),
                 }
             )
+        elif collector_name == "azure_spot":
+            config.update(
+                {
+                    "api_retry_attempts": self._config["azure_spot_api_retry_attempts"],
+                    "api_retry_delay": self._config["azure_spot_api_retry_delay"],
+                    "max_items": self.get_int("azure_spot_max_items", -1),
+                }
+            )
 
         return config
 
@@ -139,6 +155,8 @@ class ConfigManager:
         collectors: list[str] = []
         if self.get_bool("enable_azure_pricing_collector", default=False):
             collectors.append("azure_pricing")
+        if self.get_bool("enable_azure_spot_collector", default=False):
+            collectors.append("azure_spot")
         return collectors
 
     # ------------------------------------------------------------------

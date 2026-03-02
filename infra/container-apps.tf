@@ -92,6 +92,13 @@ resource "azurerm_role_assignment" "ingestion_acr_pull" {
   principal_id         = azurerm_user_assigned_identity.ingestion_jobs.principal_id
 }
 
+# Contributor on the subscription
+resource "azurerm_role_assignment" "ingestion_contributor" {
+  scope                = "/subscriptions/${var.subscription_id}"
+  role_definition_name = "Contributor"
+  principal_id         = azurerm_user_assigned_identity.ingestion_jobs.principal_id
+}
+
 # ---------------------------------------------------------------------
 # Container Apps Job – Scheduled (daily at 02:00 UTC)
 # ---------------------------------------------------------------------
@@ -175,6 +182,21 @@ resource "azurerm_container_app_job" "ingestion_scheduled" {
       env {
         name  = "LOG_LEVEL"
         value = var.log_level
+      }
+
+      env {
+        name  = "ENABLE_AZURE_SPOT_COLLECTOR"
+        value = tostring(var.enable_spot_collector)
+      }
+
+      env {
+        name  = "AZURE_SPOT_MAX_ITEMS"
+        value = var.max_spot_items
+      }
+
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = azurerm_user_assigned_identity.ingestion_jobs.client_id
       }
     }
   }
@@ -278,6 +300,21 @@ resource "azurerm_container_app_job" "ingestion_manual" {
       env {
         name  = "LOG_LEVEL"
         value = var.log_level
+      }
+
+      env {
+        name  = "ENABLE_AZURE_SPOT_COLLECTOR"
+        value = tostring(var.enable_spot_collector)
+      }
+
+      env {
+        name  = "AZURE_SPOT_MAX_ITEMS"
+        value = var.max_spot_items
+      }
+
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = azurerm_user_assigned_identity.ingestion_jobs.client_id
       }
     }
   }

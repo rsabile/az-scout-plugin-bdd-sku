@@ -14,7 +14,6 @@ from typing import Any
 
 import psycopg2  # type: ignore[import-untyped]
 import requests
-
 from core.base_collector import BaseCollector
 
 

@@ -71,24 +71,11 @@ resource "azurerm_postgresql_flexible_server_database" "azscout" {
   collation = "en_US.utf8"
 }
 
-# Apply schema via a local-exec provisioner (requires psql on the machine running Terraform)
-resource "null_resource" "apply_schema" {
-  triggers = {
-    schema_hash = filesha256("${path.module}/../sql/schema.sql")
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      PGPASSWORD="${var.postgres_admin_password}" psql \
-        -h ${azurerm_postgresql_flexible_server.main.fqdn} \
-        -U ${var.postgres_admin_user} \
-        -d ${var.postgres_db_name} \
-        -f ${path.module}/../sql/schema.sql
-    EOT
-  }
-
-  depends_on = [
-    azurerm_postgresql_flexible_server_database.azscout,
-    azurerm_postgresql_flexible_server_firewall_rule.allow_azure,
-  ]
-}
+# ---------------------------------------------------------------------
+# Schema application
+# ---------------------------------------------------------------------
+# Apply schema manually after deployment:
+#   PGPASSWORD="<password>" psql \
+#     -h $(terraform output -raw postgresql_fqdn) \
+#     -U azscout -d azscout \
+#     -f ../sql/schema.sql

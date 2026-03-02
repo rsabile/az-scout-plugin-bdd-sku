@@ -75,4 +75,39 @@ CREATE INDEX IF NOT EXISTS idx_retail_prices_vm_sku
 CREATE INDEX IF NOT EXISTS idx_retail_prices_vm_job
     ON retail_prices_vm (job_id);
 
+-- ============================================================
+-- spot_eviction_rates: VM spot eviction rates from Resource Graph
+-- ============================================================
+CREATE TABLE IF NOT EXISTS spot_eviction_rates (
+    job_id       TEXT,
+    job_datetime TIMESTAMPTZ,
+    sku_name     TEXT NOT NULL,
+    region       TEXT NOT NULL,
+    eviction_rate TEXT NOT NULL,
+    UNIQUE (sku_name, region)
+);
+
+CREATE INDEX IF NOT EXISTS idx_spot_eviction_region
+    ON spot_eviction_rates (region);
+CREATE INDEX IF NOT EXISTS idx_spot_eviction_sku
+    ON spot_eviction_rates (sku_name);
+
+-- ============================================================
+-- spot_price_history: VM spot price history from Resource Graph
+-- ============================================================
+CREATE TABLE IF NOT EXISTS spot_price_history (
+    job_id        TEXT,
+    job_datetime  TIMESTAMPTZ,
+    sku_name      TEXT NOT NULL,
+    os_type       TEXT NOT NULL,
+    region        TEXT NOT NULL,
+    price_history JSONB NOT NULL,
+    UNIQUE (sku_name, os_type, region)
+);
+
+CREATE INDEX IF NOT EXISTS idx_spot_price_region
+    ON spot_price_history (region);
+CREATE INDEX IF NOT EXISTS idx_spot_price_sku
+    ON spot_price_history (sku_name);
+
 COMMIT;
