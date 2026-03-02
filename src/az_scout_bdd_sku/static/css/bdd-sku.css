@@ -1,0 +1,62 @@
+/* SKU DB Cache plugin styles */
+
+.bdd-sku-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.bdd-sku-card {
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+    background: var(--bs-body-bg);
+}
+
+.bdd-sku-card h6 {
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+}
+
+.bdd-sku-badge {
+    display: inline-block;
+    padding: 0.2em 0.6em;
+    border-radius: 0.25rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.bdd-sku-badge--ok       { background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis); }
+.bdd-sku-badge--running  { background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
+.bdd-sku-badge--error    { background: var(--bs-danger-bg-subtle);  color: var(--bs-danger-text-emphasis); }
+.bdd-sku-badge--idle     { background: var(--bs-secondary-bg-subtle); color: var(--bs-secondary-text-emphasis); }
+
+.bdd-sku-meta {
+    font-size: 0.82rem;
+    color: var(--bs-secondary-color);
+    margin-top: 0.5rem;
+}
+
+.bdd-sku-meta dt { font-weight: 600; }
+
+.bdd-sku-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.bdd-sku-logs {
+    font-family: var(--bs-font-monospace);
+    font-size: 0.78rem;
+    background: var(--bs-tertiary-bg);
+    padding: 0.75rem;
+    border-radius: 0.25rem;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.bdd-sku-logs:empty {
+    display: none;
+}

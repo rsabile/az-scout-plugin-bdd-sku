@@ -1,0 +1,23 @@
+<!-- SKU DB Cache – status card -->
+<div>
+    <h6><i class="bi bi-database"></i> SKU DB Cache</h6>
+    <p class="text-body-secondary small mb-3">
+        Cached VM retail pricing data from the Azure Retail Prices API.
+    </p>
+
+    <!-- Status card -->
+    <div class="bdd-sku-cards" id="bdd-sku-cards">
+        <div class="bdd-sku-card" id="bdd-sku-card-retail">
+            <h6><i class="bi bi-currency-dollar"></i> Retail Pricing</h6>
+            <span class="bdd-sku-badge bdd-sku-badge--idle" id="bdd-sku-badge-retail">Loading…</span>
+            <dl class="bdd-sku-meta" id="bdd-sku-meta-retail"></dl>
+        </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="bdd-sku-actions">
+        <button class="btn btn-sm btn-outline-secondary" id="bdd-sku-refresh">
+            <i class="bi bi-arrow-clockwise"></i> Refresh Status
+        </button>
+    </div>
+</div>

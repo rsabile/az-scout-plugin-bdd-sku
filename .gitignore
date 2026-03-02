@@ -20,3 +20,10 @@ wheels/
 
 # Generated version file (hatch-vcs)
 src/*/_version.py
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
+terraform.tfvars

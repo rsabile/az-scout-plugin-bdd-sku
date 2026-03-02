@@ -1,19 +1,18 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "az-scout-bdd-sku"
-version = "0.1.0"
-description = "az-scout plugin: BDD SKU – PostgreSQL cache for VM retail pricing, Spot price history & eviction rates"
+dynamic = ["version"]
+description = "SKU DB Cache plugin for az-scout – VM pricing, spot prices & eviction rates"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "az-scout",
     "fastapi",
-    "psycopg[binary,pool]>=3.1",
-    "azure-identity",
-    "requests",
+    "psycopg[binary]>=3.2",
+    "psycopg_pool>=3.2",
 ]
 
 [project.urls]
@@ -27,29 +26,35 @@ dev = [
     "pytest-cov>=6.0",
     "ruff>=0.11",
     "mypy>=1.15",
-    "types-requests>=2.31",
     "httpx>=0.28",
 ]
 
 [project.entry-points."az_scout.plugins"]
-bdd_sku = "az_scout_plugin_bdd_sku:plugin"
+bdd_sku = "az_scout_bdd_sku:plugin"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/az_scout_plugin_bdd_sku"]
+packages = ["src/az_scout_bdd_sku"]
+
+[tool.hatch.version]
+source = "vcs"
+raw-options.local_scheme = "no-local-version"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/az_scout_bdd_sku/_version.py"
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = ["src/az_scout_bdd_sku/_version.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B", "SIM"]
 
 [tool.mypy]
 python_version = "3.11"
-strict = true
-
-[[tool.mypy.overrides]]
-module = ["psycopg.*", "psycopg_pool.*"]
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
