@@ -1,0 +1,46 @@
+/* BDD SKU plugin styles */
+
+/* Status cards */
+.bdd-status-content {
+    font-size: 0.85rem;
+}
+
+.bdd-status-content .bdd-stat {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+    border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+}
+
+.bdd-status-content .bdd-stat:last-child {
+    border-bottom: none;
+}
+
+.bdd-stat-label {
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.bdd-stat-value {
+    font-weight: 600;
+}
+
+.bdd-fresh {
+    color: var(--bs-success, #198754);
+}
+
+.bdd-stale {
+    color: var(--bs-warning, #ffc107);
+}
+
+/* Log area */
+#bdd-log {
+    font-family: var(--bs-font-monospace, monospace);
+    color: var(--bs-body-color, #212529);
+    background: transparent;
+}
+
+/* Button loading state */
+.bdd-loading {
+    pointer-events: none;
+    opacity: 0.7;
+}
