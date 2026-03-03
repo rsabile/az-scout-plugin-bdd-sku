@@ -5,56 +5,90 @@
         Cached Azure VM pricing and Spot data from Azure APIs.
     </p>
 
-    <!-- KPI row -->
-    <div class="bdd-sku-kpis" id="bdd-sku-kpis">
-        <div class="bdd-sku-kpi">
-            <span class="bdd-sku-kpi-value" id="bdd-sku-kpi-regions">--</span>
-            <span class="bdd-sku-kpi-label">Regions</span>
+    <!-- Settings card -->
+    <div class="bdd-sku-settings" id="bdd-sku-settings">
+        <div class="bdd-sku-settings-header" id="bdd-sku-settings-toggle">
+            <h6><i class="bi bi-gear"></i> API Connection</h6>
+            <span class="bdd-sku-settings-status" id="bdd-sku-conn-status"></span>
         </div>
-        <div class="bdd-sku-kpi">
-            <span class="bdd-sku-kpi-value" id="bdd-sku-kpi-retail">--</span>
-            <span class="bdd-sku-kpi-label">Retail prices</span>
-        </div>
-        <div class="bdd-sku-kpi">
-            <span class="bdd-sku-kpi-value" id="bdd-sku-kpi-spot-skus">--</span>
-            <span class="bdd-sku-kpi-label">Spot SKUs</span>
+        <div class="bdd-sku-settings-body" id="bdd-sku-settings-body">
+            <div class="bdd-sku-settings-row">
+                <label for="bdd-sku-api-url">API Base URL</label>
+                <div class="bdd-sku-settings-input-group">
+                    <input type="url" id="bdd-sku-api-url"
+                           placeholder="https://your-api.azurecontainerapps.io"
+                           autocomplete="url" spellcheck="false" />
+                    <button class="btn btn-sm btn-primary" id="bdd-sku-save-url">
+                        <i class="bi bi-save"></i> Save
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" id="bdd-sku-test-url">
+                        <i class="bi bi-plug"></i> Test
+                    </button>
+                </div>
+                <small class="bdd-sku-settings-hint" id="bdd-sku-settings-msg"></small>
+            </div>
         </div>
     </div>
 
-    <!-- Cards -->
-    <div class="bdd-sku-cards" id="bdd-sku-cards">
-        <!-- Retail Pricing -->
-        <div class="bdd-sku-card" id="bdd-sku-card-retail">
-            <div class="bdd-sku-card-header">
-                <h6><i class="bi bi-currency-dollar"></i> Retail Pricing</h6>
-                <span class="bdd-sku-badge bdd-sku-badge--idle" id="bdd-sku-badge-retail">Loading…</span>
-            </div>
-            <dl class="bdd-sku-meta" id="bdd-sku-meta-retail"></dl>
-        </div>
-
-        <!-- Spot Eviction Rates -->
-        <div class="bdd-sku-card" id="bdd-sku-card-eviction">
-            <div class="bdd-sku-card-header">
-                <h6><i class="bi bi-exclamation-triangle"></i> Spot Eviction Rates</h6>
-                <span class="bdd-sku-badge bdd-sku-badge--idle" id="bdd-sku-badge-eviction">Loading…</span>
-            </div>
-            <dl class="bdd-sku-meta" id="bdd-sku-meta-eviction"></dl>
-        </div>
-
-        <!-- Spot Price History -->
-        <div class="bdd-sku-card" id="bdd-sku-card-spot-price">
-            <div class="bdd-sku-card-header">
-                <h6><i class="bi bi-graph-up"></i> Spot Price History</h6>
-                <span class="bdd-sku-badge bdd-sku-badge--idle" id="bdd-sku-badge-spot-price">Loading…</span>
-            </div>
-            <dl class="bdd-sku-meta" id="bdd-sku-meta-spot-price"></dl>
-        </div>
+    <!-- Not-configured banner (shown when URL is not set) -->
+    <div class="bdd-sku-not-configured" id="bdd-sku-not-configured" style="display:none">
+        <i class="bi bi-info-circle"></i>
+        Configure the API endpoint above to view cached SKU data.
     </div>
 
-    <!-- Action buttons -->
-    <div class="bdd-sku-actions">
-        <button class="btn btn-sm btn-outline-secondary" id="bdd-sku-refresh">
-            <i class="bi bi-arrow-clockwise"></i> Refresh Status
-        </button>
+    <!-- Dashboard (hidden until configured) -->
+    <div id="bdd-sku-dashboard" style="display:none">
+        <!-- KPI row -->
+        <div class="bdd-sku-kpis" id="bdd-sku-kpis">
+            <div class="bdd-sku-kpi">
+                <span class="bdd-sku-kpi-value" id="bdd-sku-kpi-regions">--</span>
+                <span class="bdd-sku-kpi-label">Regions</span>
+            </div>
+            <div class="bdd-sku-kpi">
+                <span class="bdd-sku-kpi-value" id="bdd-sku-kpi-retail">--</span>
+                <span class="bdd-sku-kpi-label">Retail prices</span>
+            </div>
+            <div class="bdd-sku-kpi">
+                <span class="bdd-sku-kpi-value" id="bdd-sku-kpi-spot-skus">--</span>
+                <span class="bdd-sku-kpi-label">Spot SKUs</span>
+            </div>
+        </div>
+
+        <!-- Cards -->
+        <div class="bdd-sku-cards" id="bdd-sku-cards">
+            <!-- Retail Pricing -->
+            <div class="bdd-sku-card" id="bdd-sku-card-retail">
+                <div class="bdd-sku-card-header">
+                    <h6><i class="bi bi-currency-dollar"></i> Retail Pricing</h6>
+                    <span class="bdd-sku-badge bdd-sku-badge--idle" id="bdd-sku-badge-retail">Loading…</span>
+                </div>
+                <dl class="bdd-sku-meta" id="bdd-sku-meta-retail"></dl>
+            </div>
+
+            <!-- Spot Eviction Rates -->
+            <div class="bdd-sku-card" id="bdd-sku-card-eviction">
+                <div class="bdd-sku-card-header">
+                    <h6><i class="bi bi-exclamation-triangle"></i> Spot Eviction Rates</h6>
+                    <span class="bdd-sku-badge bdd-sku-badge--idle" id="bdd-sku-badge-eviction">Loading…</span>
+                </div>
+                <dl class="bdd-sku-meta" id="bdd-sku-meta-eviction"></dl>
+            </div>
+
+            <!-- Spot Price History -->
+            <div class="bdd-sku-card" id="bdd-sku-card-spot-price">
+                <div class="bdd-sku-card-header">
+                    <h6><i class="bi bi-graph-up"></i> Spot Price History</h6>
+                    <span class="bdd-sku-badge bdd-sku-badge--idle" id="bdd-sku-badge-spot-price">Loading…</span>
+                </div>
+                <dl class="bdd-sku-meta" id="bdd-sku-meta-spot-price"></dl>
+            </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="bdd-sku-actions">
+            <button class="btn btn-sm btn-outline-secondary" id="bdd-sku-refresh">
+                <i class="bi bi-arrow-clockwise"></i> Refresh Status
+            </button>
+        </div>
     </div>
 </div>

@@ -47,6 +47,7 @@ class DatabaseConfig:
 @dataclass
 class PluginConfig:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
+    api_base_url: str = ""
 
 
 _config: PluginConfig | None = None
@@ -59,11 +60,12 @@ def _load_from_env() -> PluginConfig | None:
     can fall back to TOML / defaults.
     """
     host = os.environ.get("POSTGRES_HOST")
-    if not host:
+    api_url = os.environ.get("BDD_SKU_API_URL", "")
+    if not host and not api_url:
         return None
 
     db_cfg = DatabaseConfig(
-        host=host,
+        host=host or "localhost",
         port=int(os.environ.get("POSTGRES_PORT", "5432")),
         dbname=os.environ.get("POSTGRES_DB", "azscout"),
         user=os.environ.get("POSTGRES_USER", "azscout"),
@@ -72,8 +74,8 @@ def _load_from_env() -> PluginConfig | None:
         auth_method=os.environ.get("POSTGRES_AUTH_METHOD", "password"),
         client_id=os.environ.get("AZURE_CLIENT_ID", ""),
     )
-    logger.info("Loaded plugin config from POSTGRES_* environment variables")
-    return PluginConfig(database=db_cfg)
+    logger.info("Loaded plugin config from environment variables")
+    return PluginConfig(database=db_cfg, api_base_url=api_url)
 
 
 def load_config() -> PluginConfig:
@@ -97,6 +99,7 @@ def load_config() -> PluginConfig:
         raw = tomllib.load(fh)
 
     db_raw = raw.get("database", {})
+    api_raw = raw.get("api", {})
 
     db_cfg = DatabaseConfig(
         host=db_raw.get("host", "localhost"),
@@ -108,7 +111,7 @@ def load_config() -> PluginConfig:
     )
 
     logger.info("Loaded plugin config from %s", path)
-    return PluginConfig(database=db_cfg)
+    return PluginConfig(database=db_cfg, api_base_url=api_raw.get("base_url", ""))
 
 
 def get_config() -> PluginConfig:
@@ -117,3 +120,61 @@ def get_config() -> PluginConfig:
     if _config is None:
         _config = load_config()
     return _config
+
+
+def is_configured() -> bool:
+    """Return True if the API base URL is set."""
+    return bool(get_config().api_base_url)
+
+
+def save_api_url(url: str) -> None:
+    """Persist *url* to the TOML config file and update the cached config."""
+    global _config
+
+    # Normalize: strip trailing slash
+    url = url.rstrip("/")
+
+    path_str = os.environ.get("AZ_SCOUT_BDD_SKU_CONFIG", "")
+    path = Path(path_str) if path_str else _DEFAULT_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Read existing content (preserve other sections)
+    existing_lines: list[str] = []
+    if path.is_file():
+        existing_lines = path.read_text(encoding="utf-8").splitlines()
+
+    # Replace or append [api] section
+    new_lines: list[str] = []
+    in_api_section = False
+    api_written = False
+    for line in existing_lines:
+        stripped = line.strip()
+        if stripped == "[api]":
+            in_api_section = True
+            new_lines.append("[api]")
+            new_lines.append(f'base_url = "{url}"')
+            api_written = True
+            continue
+        if in_api_section:
+            # Skip old keys in [api] until next section
+            if stripped.startswith("[") and stripped != "[api]":
+                in_api_section = False
+                new_lines.append(line)
+            continue
+        new_lines.append(line)
+
+    if not api_written:
+        if new_lines and new_lines[-1].strip():
+            new_lines.append("")
+        new_lines.append("[api]")
+        new_lines.append(f'base_url = "{url}"')
+
+    path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    logger.info("Saved API URL to %s", path)
+
+    # Update cached config
+    if _config is not None:
+        _config.api_base_url = url
+    else:
+        _config = load_config()
+        _config.api_base_url = url

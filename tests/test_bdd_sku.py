@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from az_scout_bdd_sku.routes import router
+from az_scout_bdd_sku.plugin_routes import router
 
 
 @pytest.fixture()
@@ -25,183 +23,205 @@ def client(app: FastAPI) -> TestClient:
     return TestClient(app)
 
 
-class TestStatus:
+# ------------------------------------------------------------------
+# Plugin routes: GET /status
+# ------------------------------------------------------------------
+
+
+class TestPluginStatus:
     """Tests for GET /plugins/bdd-sku/status."""
 
-    @patch("az_scout_bdd_sku.routes.is_healthy", new_callable=AsyncMock, return_value=True)
-    @patch("az_scout_bdd_sku.routes.get_conn")
-    def test_status_returns_count_and_last_run(
+    @patch("az_scout_bdd_sku.plugin_routes.is_configured", return_value=True)
+    @patch("az_scout_bdd_sku.api_client.is_configured", return_value=True)
+    @patch("az_scout_bdd_sku.api_client.get_config")
+    @patch("az_scout_bdd_sku.api_client.requests.get")
+    def test_status_returns_api_data(
         self,
-        mock_conn_ctx: MagicMock,
-        mock_healthy: AsyncMock,
+        mock_get: MagicMock,
+        mock_cfg: MagicMock,
+        mock_is_cfg_client: MagicMock,
+        mock_is_cfg_routes: MagicMock,
         client: TestClient,
     ) -> None:
-        run_id = uuid4()
-        started = datetime(2026, 1, 15, 10, 0, 0, tzinfo=UTC)
-        finished = datetime(2026, 1, 15, 10, 5, 0, tzinfo=UTC)
-
-        mock_conn = AsyncMock()
-        call_count = 0
-
-        async def fake_execute(sql: str, *args: object) -> AsyncMock:
-            nonlocal call_count
-            call_count += 1
-            cursor = AsyncMock()
-            if call_count <= 4:
-                # COUNT(*) queries (3 tables) + regions/skus count
-                cursor.fetchone = AsyncMock(return_value=(42,))
-            elif "job_runs" in sql:
-                # _last_run_for → job_runs query
-                cursor.fetchone = AsyncMock(
-                    return_value=(run_id, "ok", started, finished, 1000, 950, None)
-                )
-            else:
-                cursor.fetchone = AsyncMock(return_value=None)
-            return cursor
-
-        mock_conn.execute = fake_execute
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_conn_ctx.return_value = ctx
+        mock_cfg.return_value.api_base_url = "https://api.example.com"
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "db_connected": True,
+            "retail_prices_count": 42,
+            "spot_eviction_rates_count": 10,
+            "spot_price_history_count": 5,
+            "regions_count": 3,
+            "spot_skus_count": 20,
+            "last_run": {"status": "ok", "items_written": 950},
+            "last_run_spot": None,
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
 
         resp = client.get("/plugins/bdd-sku/status")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["db_connected"] is True
+        assert data["configured"] is True
         assert data["retail_prices_count"] == 42
         assert data["last_run"]["status"] == "ok"
-        assert data["last_run"]["items_written"] == 950
 
-    @patch("az_scout_bdd_sku.routes.is_healthy", new_callable=AsyncMock, return_value=False)
-    def test_status_db_down(
+    @patch("az_scout_bdd_sku.plugin_routes.is_configured", return_value=False)
+    def test_status_not_configured(
         self,
-        mock_healthy: AsyncMock,
+        mock_is_cfg: MagicMock,
         client: TestClient,
     ) -> None:
         resp = client.get("/plugins/bdd-sku/status")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["db_connected"] is False
+        assert data["configured"] is False
         assert data["retail_prices_count"] == -1
-        assert data["last_run"] is None
 
-    @patch("az_scout_bdd_sku.routes.is_healthy", new_callable=AsyncMock, return_value=True)
-    @patch("az_scout_bdd_sku.routes.get_conn")
-    def test_status_no_runs_yet(
+    @patch("az_scout_bdd_sku.plugin_routes.is_configured", return_value=True)
+    @patch("az_scout_bdd_sku.api_client.is_configured", return_value=True)
+    @patch("az_scout_bdd_sku.api_client.get_config")
+    @patch("az_scout_bdd_sku.api_client.requests.get")
+    def test_status_api_error_returns_502(
         self,
-        mock_conn_ctx: MagicMock,
-        mock_healthy: AsyncMock,
+        mock_get: MagicMock,
+        mock_cfg: MagicMock,
+        mock_is_cfg_client: MagicMock,
+        mock_is_cfg_routes: MagicMock,
         client: TestClient,
     ) -> None:
-        mock_conn = AsyncMock()
+        import requests
 
-        async def fake_execute(sql: str, *args: object) -> AsyncMock:
-            cursor = AsyncMock()
-            if "COUNT(*)" in sql and "job_runs" not in sql and "MAX" not in sql:
-                cursor.fetchone = AsyncMock(return_value=(0,))
-            elif "COUNT(DISTINCT" in sql:
-                cursor.fetchone = AsyncMock(return_value=(0, 0))
-            else:
-                # job_runs → no rows; fallback MAX → (None, 0)
-                cursor.fetchone = AsyncMock(return_value=None)
-            return cursor
-
-        mock_conn.execute = fake_execute
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_conn_ctx.return_value = ctx
+        mock_cfg.return_value.api_base_url = "https://api.example.com"
+        mock_get.side_effect = requests.ConnectionError("refused")
 
         resp = client.get("/plugins/bdd-sku/status")
-        assert resp.status_code == 200
+        assert resp.status_code == 502
         data = resp.json()
-        assert data["db_connected"] is True
-        assert data["retail_prices_count"] == 0
-        assert data["last_run"] is None
+        assert data["configured"] is True
+        assert "error" in data
 
-    @patch("az_scout_bdd_sku.routes.is_healthy", new_callable=AsyncMock, return_value=True)
-    @patch("az_scout_bdd_sku.routes.get_conn")
-    def test_status_fallback_from_data_table(
+
+# ------------------------------------------------------------------
+# Plugin routes: GET/PUT /settings, POST /settings/test
+# ------------------------------------------------------------------
+
+
+class TestPluginSettings:
+    """Tests for /plugins/bdd-sku/settings endpoints."""
+
+    @patch("az_scout_bdd_sku.plugin_routes.is_configured", return_value=False)
+    @patch("az_scout_bdd_sku.plugin_routes.get_config")
+    def test_get_settings(
         self,
-        mock_conn_ctx: MagicMock,
-        mock_healthy: AsyncMock,
+        mock_cfg: MagicMock,
+        mock_is_cfg: MagicMock,
         client: TestClient,
     ) -> None:
-        """When job_runs is empty, last_run falls back to MAX(job_datetime)."""
-        fallback_dt = datetime(2026, 2, 20, 8, 0, 0, tzinfo=UTC)
-        mock_conn = AsyncMock()
-
-        async def fake_execute(sql: str, *args: object) -> AsyncMock:
-            cursor = AsyncMock()
-            if "job_runs" in sql:
-                # No job_runs rows
-                cursor.fetchone = AsyncMock(return_value=None)
-            elif "MAX(job_datetime)" in sql:
-                # Fallback: data table has rows
-                cursor.fetchone = AsyncMock(return_value=(fallback_dt, 500))
-            elif "COUNT(DISTINCT" in sql:
-                cursor.fetchone = AsyncMock(return_value=(10, 200))
-            else:
-                # COUNT(*) queries
-                cursor.fetchone = AsyncMock(return_value=(500,))
-            return cursor
-
-        mock_conn.execute = fake_execute
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_conn_ctx.return_value = ctx
-
-        resp = client.get("/plugins/bdd-sku/status")
+        mock_cfg.return_value.api_base_url = ""
+        resp = client.get("/plugins/bdd-sku/settings")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["last_run"] is not None
-        assert data["last_run"]["status"] == "ok"
-        assert data["last_run"]["items_written"] == 500
-        assert data["last_run"]["run_id"] is None
-        assert data["last_run_spot"] is not None
+        assert data["api_base_url"] == ""
+        assert data["is_configured"] is False
+
+    @patch("az_scout_bdd_sku.plugin_routes.save_api_url")
+    @patch("az_scout_bdd_sku.plugin_routes.get_config")
+    def test_post_settings_valid_url(
+        self,
+        mock_cfg: MagicMock,
+        mock_save: MagicMock,
+        client: TestClient,
+    ) -> None:
+        mock_cfg.return_value.api_base_url = "https://api.example.com"
+        resp = client.post(
+            "/plugins/bdd-sku/settings/update",
+            json={"api_base_url": "https://api.example.com"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        mock_save.assert_called_once_with("https://api.example.com")
+
+    def test_post_settings_empty_url(self, client: TestClient) -> None:
+        resp = client.post("/plugins/bdd-sku/settings/update", json={"api_base_url": ""})
+        assert resp.status_code == 400
+        assert resp.json()["ok"] is False
+
+    def test_post_settings_invalid_url(self, client: TestClient) -> None:
+        resp = client.post("/plugins/bdd-sku/settings/update", json={"api_base_url": "ftp://bad"})
+        assert resp.status_code == 400
+        assert "http" in resp.json()["error"]
+
+    @patch("az_scout_bdd_sku.plugin_routes.is_configured", return_value=True)
+    @patch("az_scout_bdd_sku.plugin_routes.get_config")
+    @patch("az_scout_bdd_sku.api_client.requests.get")
+    def test_test_connection_ok(
+        self,
+        mock_get: MagicMock,
+        mock_cfg: MagicMock,
+        mock_is_cfg: MagicMock,
+        client: TestClient,
+    ) -> None:
+        mock_cfg.return_value.api_base_url = "https://api.example.com"
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"status": "healthy"}
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        resp = client.post("/plugins/bdd-sku/settings/test")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+
+    @patch("az_scout_bdd_sku.plugin_routes.is_configured", return_value=False)
+    def test_test_connection_not_configured(
+        self,
+        mock_is_cfg: MagicMock,
+        client: TestClient,
+    ) -> None:
+        resp = client.post("/plugins/bdd-sku/settings/test")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is False
+        assert "not configured" in data["error"].lower()
+
+
+# ------------------------------------------------------------------
+# MCP tools
+# ------------------------------------------------------------------
 
 
 class TestCacheStatusTool:
     """Tests for the MCP cache_status tool."""
 
-    @patch("az_scout_bdd_sku.tools.is_healthy", new_callable=AsyncMock, return_value=True)
-    @patch("az_scout_bdd_sku.tools.get_conn")
+    @patch("az_scout_bdd_sku.api_client.is_configured", return_value=True)
+    @patch("az_scout_bdd_sku.api_client.get_config")
+    @patch("az_scout_bdd_sku.api_client.requests.get")
     def test_cache_status_returns_data(
         self,
-        mock_conn_ctx: MagicMock,
-        mock_healthy: AsyncMock,
+        mock_get: MagicMock,
+        mock_cfg: MagicMock,
+        mock_is_cfg: MagicMock,
     ) -> None:
         from az_scout_bdd_sku.tools import cache_status
 
-        mock_conn = AsyncMock()
-        call_count = 0
-
-        async def fake_execute(sql: str, *args: object) -> AsyncMock:
-            nonlocal call_count
-            call_count += 1
-            cursor = AsyncMock()
-            if call_count == 1:
-                cursor.fetchone = AsyncMock(return_value=(100,))
-            else:
-                cursor.fetchone = AsyncMock(return_value=None)
-            return cursor
-
-        mock_conn.execute = fake_execute
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-        ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_conn_ctx.return_value = ctx
+        mock_cfg.return_value.api_base_url = "https://api.example.com"
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "db_connected": True,
+            "retail_prices_count": 100,
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
 
         result = cache_status()
         assert result["db_connected"] is True
         assert result["retail_prices_count"] == 100
 
-    @patch("az_scout_bdd_sku.tools.is_healthy", new_callable=AsyncMock, return_value=False)
-    def test_cache_status_db_down(self, mock_healthy: AsyncMock) -> None:
+    @patch("az_scout_bdd_sku.api_client.is_configured", return_value=False)
+    def test_cache_status_not_configured(self, mock_is_cfg: MagicMock) -> None:
         from az_scout_bdd_sku.tools import cache_status
 
         result = cache_status()
-        assert result["db_connected"] is False
-        assert result["retail_prices_count"] == -1
+        assert "error" in result
+        assert "not configured" in result["error"].lower()

@@ -1,5 +1,83 @@
 /* SKU DB Cache plugin styles */
 
+/* Settings card */
+.bdd-sku-settings {
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.5rem;
+    margin-bottom: 1.25rem;
+    background: var(--bs-body-bg);
+}
+
+.bdd-sku-settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.65rem 1rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.bdd-sku-settings-header h6 { margin: 0; font-weight: 600; }
+
+.bdd-sku-settings-status {
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.15em 0.55em;
+    border-radius: 0.25rem;
+}
+
+.bdd-sku-conn--ok    { background: var(--bs-success-bg-subtle); color: var(--bs-success-text-emphasis); }
+.bdd-sku-conn--warn  { background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
+.bdd-sku-conn--error { background: var(--bs-danger-bg-subtle);  color: var(--bs-danger-text-emphasis); }
+
+.bdd-sku-settings-body {
+    padding: 0 1rem 0.85rem;
+}
+
+.bdd-sku-settings-row label {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+    color: var(--bs-secondary-color);
+}
+
+.bdd-sku-settings-input-group {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.bdd-sku-settings-input-group input[type="url"] {
+    flex: 1;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.25rem;
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    font-size: 0.85rem;
+}
+
+.bdd-sku-settings-hint {
+    display: block;
+    font-size: 0.78rem;
+    margin-top: 0.3rem;
+    min-height: 1.1em;
+}
+
+.bdd-sku-msg--ok    { color: var(--bs-success-text-emphasis); }
+.bdd-sku-msg--error { color: var(--bs-danger-text-emphasis); }
+
+/* Not-configured banner */
+.bdd-sku-not-configured {
+    padding: 1.25rem;
+    text-align: center;
+    color: var(--bs-secondary-color);
+    border: 1px dashed var(--bs-border-color);
+    border-radius: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
 /* KPI row */
 .bdd-sku-kpis {
     display: flex;

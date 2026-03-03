@@ -34,8 +34,9 @@ class BddSkuPlugin:
     version = __version__
 
     def get_router(self) -> APIRouter | None:
-        # Routes are served by the standalone API container.
-        return None
+        from az_scout_bdd_sku.plugin_routes import router
+
+        return router
 
     def get_mcp_tools(self) -> list[Callable[..., Any]] | None:
         from az_scout_bdd_sku.tools import (

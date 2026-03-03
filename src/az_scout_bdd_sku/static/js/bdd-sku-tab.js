@@ -18,9 +18,119 @@
     // 2. Init
     // ---------------------------------------------------------------
     function init() {
+        const urlInput     = document.getElementById("bdd-sku-api-url");
+        const saveBtn      = document.getElementById("bdd-sku-save-url");
+        const testBtn      = document.getElementById("bdd-sku-test-url");
+        const settingsMsg  = document.getElementById("bdd-sku-settings-msg");
+        const connStatus   = document.getElementById("bdd-sku-conn-status");
+        const settingsBody = document.getElementById("bdd-sku-settings-body");
+        const settingsHdr  = document.getElementById("bdd-sku-settings-toggle");
+        const dashboard    = document.getElementById("bdd-sku-dashboard");
+        const notConfigured = document.getElementById("bdd-sku-not-configured");
+
+        let isConfigured = false;
+        let settingsOpen = true;
+
+        // -- Settings collapse toggle --
+        settingsHdr.addEventListener("click", () => {
+            settingsOpen = !settingsOpen;
+            settingsBody.style.display = settingsOpen ? "" : "none";
+        });
+
+        // -- Load settings on init --
+        async function loadSettings() {
+            try {
+                const s = await apiFetch(`/plugins/${PLUGIN}/settings`);
+                urlInput.value = s.api_base_url || "";
+                isConfigured = s.is_configured;
+                updateConnStatus(isConfigured ? "connected" : "not-configured");
+                showDashboard(isConfigured);
+                if (isConfigured) {
+                    settingsOpen = false;
+                    settingsBody.style.display = "none";
+                    refresh();
+                }
+            } catch {
+                updateConnStatus("error");
+                showDashboard(false);
+            }
+        }
+
+        function showDashboard(show) {
+            dashboard.style.display = show ? "" : "none";
+            notConfigured.style.display = show ? "none" : "";
+        }
+
+        function updateConnStatus(state) {
+            const map = {
+                "connected":      { cls: "bdd-sku-conn--ok",    text: "Connected" },
+                "not-configured": { cls: "bdd-sku-conn--warn",  text: "Not configured" },
+                "error":          { cls: "bdd-sku-conn--error", text: "Error" },
+            };
+            const s = map[state] || map["not-configured"];
+            connStatus.className = "bdd-sku-settings-status " + s.cls;
+            connStatus.textContent = s.text;
+        }
+
+        function showMsg(text, type) {
+            settingsMsg.textContent = text;
+            settingsMsg.className = "bdd-sku-settings-hint bdd-sku-msg--" + type;
+        }
+
+        function clearMsg() {
+            settingsMsg.textContent = "";
+            settingsMsg.className = "bdd-sku-settings-hint";
+        }
+
+        // -- Save --
+        saveBtn.addEventListener("click", async () => {
+            clearMsg();
+            const url = urlInput.value.trim();
+            if (!url) { showMsg("URL is required.", "error"); return; }
+            saveBtn.disabled = true;
+            try {
+                await apiPost(`/plugins/${PLUGIN}/settings/update`, { api_base_url: url });
+                showMsg("Saved.", "ok");
+                isConfigured = true;
+                updateConnStatus("connected");
+                showDashboard(true);
+                refresh();
+            } catch (e) {
+                showMsg(e.message || "Save failed.", "error");
+            } finally {
+                saveBtn.disabled = false;
+            }
+        });
+
+        // -- Test --
+        testBtn.addEventListener("click", async () => {
+            clearMsg();
+            const url = urlInput.value.trim();
+            if (!url) { showMsg("Enter a URL first.", "error"); return; }
+            testBtn.disabled = true;
+            try {
+                const r = await apiPost(`/plugins/${PLUGIN}/settings/test`, { api_base_url: url });
+                if (r.ok) {
+                    showMsg(`Connection OK (HTTP ${r.status}).`, "ok");
+                } else {
+                    showMsg(r.error || "Connection failed.", "error");
+                }
+            } catch (e) {
+                showMsg(e.message || "Test failed.", "error");
+            } finally {
+                testBtn.disabled = false;
+            }
+        });
+
+        // -- Dashboard logic (unchanged) --
         async function refresh() {
             try {
                 const data = await apiFetch(`/plugins/${PLUGIN}/status`);
+                if (data.configured === false) {
+                    showDashboard(false);
+                    updateConnStatus("not-configured");
+                    return;
+                }
                 updateDashboard(data);
             } catch (e) {
                 setBadge("retail", "error", "Error");
@@ -75,12 +185,10 @@
         }
 
         function updateDashboard(data) {
-            // KPIs
             setKpi("bdd-sku-kpi-regions", fmtNum(data.regions_count ?? 0));
             setKpi("bdd-sku-kpi-retail", fmtNum(data.retail_prices_count));
             setKpi("bdd-sku-kpi-spot-skus", fmtNum(data.spot_skus_count ?? 0));
 
-            // Retail Pricing card
             const retailRun = data.last_run;
             const rs = runStatus(retailRun);
             setBadge("retail", rs.cls, rs.label);
@@ -88,7 +196,6 @@
             retailMeta += runMeta(retailRun);
             setMeta("retail", retailMeta);
 
-            // Spot Eviction card
             const spotRun = data.last_run_spot;
             const ss = runStatus(spotRun);
             setBadge("eviction", ss.cls, ss.label);
@@ -96,20 +203,16 @@
             evictMeta += runMeta(spotRun);
             setMeta("eviction", evictMeta);
 
-            // Spot Price History card
             setBadge("spot-price", ss.cls, ss.label);
             let priceMeta = `<dt>Rows</dt><dd>${fmtNum(data.spot_price_history_count)}</dd>`;
             priceMeta += runMeta(spotRun);
             setMeta("spot-price", priceMeta);
         }
 
-        // Refresh button
         const refreshBtn = document.getElementById("bdd-sku-refresh");
-        if (refreshBtn) {
-            refreshBtn.addEventListener("click", refresh);
-        }
+        if (refreshBtn) refreshBtn.addEventListener("click", refresh);
 
         // Initial load
-        refresh();
+        loadSettings();
     }
 })();
