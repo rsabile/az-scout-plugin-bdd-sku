@@ -19,9 +19,10 @@ postgres_sku            = "B_Standard_B1ms"
 postgres_storage_mb     = 32768
 
 # Ingestion Jobs
-max_pricing_items = "-1"         # -1 = unlimited
-cron_expression   = "0 2 * * *"  # Daily at 02:00 UTC
-log_level         = "INFO"
+max_pricing_items  = "-1"         # -1 = unlimited
+cron_expression    = "0 2 * * *"  # Daily at 02:00 UTC
+sku_mapper_cron    = "0 4 * * *"  # Daily at 04:00 UTC (after ingestion)
+log_level          = "INFO"
 
 # API Container App
 api_cpu          = 0.5

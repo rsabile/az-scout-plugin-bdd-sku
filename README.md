@@ -12,6 +12,7 @@ Plugin [az-scout](https://github.com/lrivallain/az-scout) qui met en cache les *
 │  MCP server        │         │    /spot/eviction-rates    │         │ retail_prices│
 │  4 outils exposés  │         │    /spot/eviction-rates/   │         │ spot_evict.  │
 │                    │         │         history            │         │ spot_price_h.│
+│                    │         │    /spot/price-history     │         │ vm_sku_catal.│
 │                    │         │    /spot/price-history     │         │ job_runs     │
 └────────────────────┘         └───────────────────────────┘         │ job_logs     │
                                                                      └──────┬───────┘
@@ -28,21 +29,30 @@ Plugin [az-scout](https://github.com/lrivallain/az-scout) qui met en cache les *
 ┌────────────────────┐                                               │  PostgreSQL  │
 │  Ingestion Jobs    │  INSERT (psycopg2)                            │   (:5432)    │
 │  (Container Apps)  │ ─────────────────────────────────────────────▸│              │
-│                    │  ◂── Azure Retail Prices API (public, no auth)└──────────────┘
-│  3 jobs :          │  ◂── Azure Resource Graph API (SpotResources)
-│  - daily (02:00)   │
-│  - hourly (evict.) │
-│  - manual          │
+│                    │  ◂── Azure Retail Prices API (public, no auth)└──────┬───────┘
+│  3 jobs :          │  ◂── Azure Resource Graph API (SpotResources)        │
+│  - daily (02:00)   │                                                      │
+│  - hourly (evict.) │                                                      │
+│  - manual          │                                                      │
+└────────────────────┘                                                      │
+                                                                            │
+┌────────────────────┐                                                      │
+│  SKU Mapper Job    │  READ distinct SKUs + UPSERT vm_sku_catalog          │
+│  (Container Apps)  │ ─────────────────────────────────────────────────────┘
+│                    │
+│  daily (04:00)     │  ◂── Aucune API externe (données locales uniquement)
+│  password auth     │
 └────────────────────┘
 ```
 
-**Trois composants indépendants :**
+**Quatre composants indépendants :**
 
 | Composant | Rôle | Technologie |
 |---|---|---|
 | **Plugin** (`src/az_scout_bdd_sku/`) | Tab UI + routes API + outils MCP, lecture seule depuis Postgres | FastAPI, psycopg (async), psycopg_pool |
 | **Standalone API** (`api/`) | Container App dédié exposant tous les endpoints en HTTPS 24/7 | FastAPI, uvicorn, azure-identity |
 | **Ingestion** (`ingestion/`) | Jobs CLI one-shot qui collectent les prix et les insèrent dans Postgres | requests, psycopg2-binary, azure-identity |
+| **SKU Mapper** (`sku-mapper-job/`) | Job batch quotidien qui enrichit la table `vm_sku_catalog` (famille, catégorie, vCPU…) | psycopg3, regex parser |
 
 ---
 
@@ -482,6 +492,8 @@ L'infrastructure Azure est définie dans le dossier `infra/` et se déploie avec
   - `{prefix}-sched` — cron quotidien (02:00 UTC) : collecte complète (pricing + spot)
   - `{prefix}-spot-evict` — cron horaire : éviction uniquement (historisation)
   - `{prefix}-manual` — déclenchement manuel à la demande
+- **1 Container Apps Job – SKU Mapper** :
+  - `sku-mapper-job` — cron quotidien (04:00 UTC) : enrichit `vm_sku_catalog` à partir des SKUs collectés
 
 ### Jobs d'ingestion
 
@@ -490,8 +502,11 @@ L'infrastructure Azure est définie dans le dossier `infra/` et se déploie avec
 | **Scheduled** (`-sched`) | `0 2 * * *` (02:00 UTC) | pricing + spot (éviction + prix) | 1 CPU / 2 Gi | 3600s |
 | **Spot Eviction Hourly** (`-spot-evict`) | `0 * * * *` (chaque heure) | spot éviction uniquement | 0.5 CPU / 1 Gi | 900s |
 | **Manual** (`-manual`) | On-demand | pricing + spot | 1 CPU / 2 Gi | 21600s |
+| **SKU Mapper** (`sku-mapper-job`) | `0 4 * * *` (04:00 UTC) | parse & enrichit `vm_sku_catalog` | 0.25 CPU / 0.5 Gi | 600s |
 
 Le job horaire (`spot-evict`) lance le collecteur Spot avec `AZURE_SPOT_EVICTION_ONLY=true`, ce qui ne collecte que les ~11 000 taux d'éviction sans requêter l'historique des prix (~243 000 lignes). Chaque exécution crée un nouveau snapshot dans `spot_eviction_rates` (identifié par `job_id`), permettant de suivre l'évolution des taux d'éviction dans le temps.
+
+Le job **SKU Mapper** (`sku-mapper-job`) tourne à 04:00 UTC, après la fin de l'ingestion (02:00 UTC). Il lit tous les noms de SKUs distincts depuis les 3 tables de données (`retail_prices_vm`, `spot_eviction_rates`, `spot_price_history`), parse la convention de nommage `Standard_…` via regex pour extraire famille, série, version et nombre de vCPUs, puis upsert les résultats dans `vm_sku_catalog`. Le job est idempotent et utilise l'authentification par mot de passe (comme les jobs d'ingestion).
 
 ### 1. Prérequis
 
@@ -523,16 +538,19 @@ terraform plan        # Vérifier les ressources qui seront créées
 terraform apply       # Confirmer avec 'yes'
 ```
 
-### 4. Construire et pousser l'image d'ingestion
+### 4. Construire et pousser les images
 
-Après le déploiement, construire l'image dans l'ACR :
+Après le déploiement, construire les images dans l'ACR :
 
 ```bash
 # Récupérer le nom du registre
 ACR_NAME=$(terraform output -raw container_registry_login_server)
 
-# Construire directement dans l'ACR
+# Image d'ingestion
 az acr build --registry ${ACR_NAME%%.*} --image bdd-sku-ingestion:latest ../ingestion/
+
+# Image du SKU Mapper
+az acr build --registry ${ACR_NAME%%.*} --image sku-mapper-job:latest ../sku-mapper-job/
 ```
 
 ### 5. Appliquer le schéma PostgreSQL
@@ -799,12 +817,12 @@ az-scout-plugin-bdd-sku/
 │   ├── main.py                     # FastAPI standalone (lifespan, CORS, /health)
 │   └── requirements.txt            # fastapi, uvicorn, psycopg, azure-identity
 ├── sql/
-│   └── schema.sql                  # Schéma PostgreSQL (5 tables)
+│   └── schema.sql                  # Schéma PostgreSQL (6 tables)
 ├── postgresql/
 │   └── docker-compose.yml          # Postgres 17 pour le développement local
 ├── infra/
 │   ├── main.tf                     # Provider + RG + PG Flexible Server + Entra admin MSI
-│   ├── container-apps.tf           # ACR + Container Apps (API + 3 Jobs) + MSI
+│   ├── container-apps.tf           # ACR + Container Apps (API + 4 Jobs) + MSI
 │   ├── variables.tf                # Variables Terraform
 │   ├── outputs.tf                  # Outputs (FQDN, noms de ressources, etc.)
 │   └── terraform.tfvars.example    # Exemple de fichier de variables
@@ -822,6 +840,23 @@ az-scout-plugin-bdd-sku/
 │       └── shared/
 │           ├── config.py           # Gestion des variables d'environnement
 │           └── pg_client.py        # Client PostgreSQL (sync)
+├── sku-mapper-job/
+│   ├── Dockerfile                  # Image Python 3.11-slim, multi-stage
+│   ├── pyproject.toml              # Dépendances (psycopg[binary])
+│   ├── README.md                   # Documentation dédiée
+│   ├── deploy/
+│   │   ├── cronjob.yaml            # Kubernetes CronJob
+│   │   └── container-app-job.yaml  # Azure Container Apps Job
+│   ├── src/sku_mapper_job/
+│   │   ├── __init__.py
+│   │   ├── __main__.py             # python -m sku_mapper_job
+│   │   ├── config.py               # Configuration env vars (dataclass)
+│   │   ├── db.py                   # Fonctions PostgreSQL (psycopg3)
+│   │   ├── main.py                 # Point d'entrée run()
+│   │   ├── mapping.py              # FAMILY_CATEGORY dict
+│   │   ├── parser.py               # Regex parser SKU Azure
+│   │   └── sql.py                  # DDL + requêtes SQL
+│   └── tests/                      # 52 tests pytest
 ├── src/
 │   └── az_scout_bdd_sku/
 │       ├── __init__.py             # Classe plugin + entry point
@@ -848,6 +883,7 @@ az-scout-plugin-bdd-sku/
 | `retail_prices_vm` | Prix retail des VM Azure (25 colonnes, UPSERT via contrainte UNIQUE) |
 | `spot_eviction_rates` | Taux d'éviction Spot par SKU×région (`UNIQUE (sku_name, region, job_id)` — un snapshot par exécution) |
 | `spot_price_history` | Historique des prix Spot par SKU×région×OS (tableau JSONB de prix horodatés) |
+| `vm_sku_catalog` | Catalogue des SKUs VM enrichi : famille, série, version, vCPU, catégorie, workload tags (créé par le SKU Mapper) |
 
 ---
 

@@ -33,6 +33,11 @@ output "spot_eviction_hourly_job_name" {
   value       = azurerm_container_app_job.spot_eviction_hourly.name
 }
 
+output "sku_mapper_job_name" {
+  description = "Name of the SKU mapper job"
+  value       = azurerm_container_app_job.sku_mapper.name
+}
+
 output "managed_identity_client_id" {
   description = "Client ID of the managed identity for jobs"
   value       = azurerm_user_assigned_identity.ingestion_jobs.client_id

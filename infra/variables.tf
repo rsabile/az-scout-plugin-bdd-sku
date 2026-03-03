@@ -101,6 +101,12 @@ variable "log_level" {
   default     = "INFO"
 }
 
+variable "sku_mapper_cron" {
+  description = "Cron expression for the SKU mapper job (UTC). Should run after ingestion."
+  type        = string
+  default     = "0 4 * * *" # Daily at 04:00 UTC
+}
+
 # ---------------------------------------------------------------------
 # API Container App
 # ---------------------------------------------------------------------
