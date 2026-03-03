@@ -129,16 +129,16 @@ def run() -> None:
         items_read = len(skus)
         log.info("skus_fetched", extra={"skus_count": items_read})
 
-        # -- Parse each SKU --------------------------------------------------
+        # -- Parse each SKU (skip non-Standard) ------------------------------
         rows: list[dict[str, Any]] = []
         parse_ok = 0
         parse_skip = 0
         for sku_name in sorted(skus):
             info = parse_sku(sku_name)
-            if info.tier is not None:
-                parse_ok += 1
-            else:
+            if info.tier is None:
                 parse_skip += 1
+                continue
+            parse_ok += 1
             rows.append(_sku_info_to_row(info))
 
         log.info(

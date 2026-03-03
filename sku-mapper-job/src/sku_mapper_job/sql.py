@@ -32,12 +32,15 @@ SELECT_DISTINCT_SKUS = """\
 SELECT arm_sku_name AS sku_name
   FROM retail_prices_vm
  WHERE arm_sku_name IS NOT NULL
+   AND arm_sku_name LIKE 'Standard\\_%'
 UNION
 SELECT sku_name
   FROM spot_eviction_rates
+ WHERE sku_name LIKE 'Standard\\_%'
 UNION
 SELECT sku_name
-  FROM spot_price_history;
+  FROM spot_price_history
+ WHERE sku_name LIKE 'Standard\\_%';
 """
 
 # -- Upsert --------------------------------------------------------------------

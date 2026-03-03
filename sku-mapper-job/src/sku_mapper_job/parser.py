@@ -1,8 +1,9 @@
 """Parse Azure VM SKU names into structured components.
 
 Handles the ``Standard_<family><vcpus><suffix>[_<model>]_v<N>`` naming convention,
-including multi-letter families (NC, ND, NV, HB, HC, DC …) and embedded GPU model
-names (A100, H100, MI300X …).
+including multi-letter families (NC, ND, NV, HB, HC, DC …), constrained vCPU counts
+(D32-16s_v3), space-separated versions (D16a v4), and embedded GPU model names
+(A100, H100, MI300X …).
 """
 
 from __future__ import annotations
@@ -16,23 +17,40 @@ from sku_mapper_job.mapping import (
     category_for_family,
 )
 
-# Regex that captures the core of a Standard_… SKU name.
+# Primary regex — handles the vast majority of Standard_… SKU names.
 #
 # Group layout (named):
 #   family  – one or more uppercase letters (family prefix)
-#   vcpus   – first run of digits (vCPU count, best-effort)
+#   vcpus   – first run of digits (vCPU count, optional)
 #   suffix  – lowercase letters before an optional _<model>_v<N> or _v<N> or end
 #   version – optional trailing v<N> (e.g. v5)
 #
-# The model segment (e.g. _A100, _H100, _MI300X) is intentionally consumed but
-# not captured — it does not affect family/category classification.
+# Supports:
+#   Standard_D2s_v5          – normal
+#   Standard_D32-16s_v3      – constrained vCPU (consumed, not captured)
+#   Standard_D16a v4         – space before version
+#   Standard_Das             – no vCPU digits
+#   Standard_NC24ads_A100_v4 – model segment
 _SKU_RE = re.compile(
     r"^Standard_"
     r"(?P<family>[A-Z]+)"  # family letters
-    r"(?P<vcpus>\d+)"  # vCPU count
+    r"(?P<vcpus>\d+)?"  # optional vCPU count
+    r"(?:-\d+)?"  # optional constrained vCPU (e.g. -16)
     r"(?P<suffix>[a-z]*)"  # optional lowercase suffix (s, ds, ads, …)
-    r"(?:_[A-Za-z0-9]+)*?"  # optional model segment(s) (_A100, _H100, …)
-    r"(?:_(?P<version>v\d+))?"  # optional version (_v5, _v2, …)
+    r"(?:[_ ][A-Za-z0-9]+)*?"  # optional model segment(s) (_A100, _H100, …)
+    r"(?:[_ ](?P<version>v\d+))?"  # optional version (_v5, " v4")
+    r"$",
+    re.ASCII,
+)
+
+# Fallback regex for compressed names like Standard_Dv21 (= Standard_D1_v2).
+# Pattern: Standard_<family>v<version><vcpus>
+_SKU_FALLBACK_RE = re.compile(
+    r"^Standard_"
+    r"(?P<family>[A-Z]+)"  # family letters
+    r"(?P<version>v\d)"  # version (always single digit: v2, v3 …)
+    r"(?P<vcpus>\d+)?"  # optional trailing vCPU count
+    r"(?P<suffix>[a-z]*)"  # optional suffix
     r"$",
     re.ASCII,
 )
@@ -89,21 +107,14 @@ def _derive_series(family: str, suffix: str, version: str | None) -> str:
     return _derive_sku_type(family, suffix, version)
 
 
-def parse_sku(sku_name: str) -> SkuInfo:
-    """Parse an Azure VM SKU name into structured components.
-
-    Returns an ``SkuInfo`` with ``category='other'`` and ``None`` fields when the
-    name does not match the ``Standard_…`` pattern.
-    """
-    m = _SKU_RE.match(sku_name)
-    if m is None:
-        return SkuInfo(sku_name=sku_name)
-
-    raw_family = m.group("family")
-    vcpus_str = m.group("vcpus")
-    suffix = m.group("suffix") or ""
-    version = m.group("version")  # e.g. "v5" or None
-
+def _build_sku_info(
+    sku_name: str,
+    raw_family: str,
+    vcpus_str: str | None,
+    suffix: str,
+    version: str | None,
+) -> SkuInfo:
+    """Build a SkuInfo from parsed regex groups."""
     family = _extract_family(raw_family)
     vcpus = int(vcpus_str) if vcpus_str else None
     category = category_for_family(family)
@@ -122,3 +133,33 @@ def parse_sku(sku_name: str) -> SkuInfo:
         category=category,
         workload_tags=tags,
     )
+
+
+def parse_sku(sku_name: str) -> SkuInfo:
+    """Parse an Azure VM SKU name into structured components.
+
+    Tries the primary regex first, then a fallback for compressed names like
+    ``Standard_Dv21``. Returns an ``SkuInfo`` with ``category='other'`` and
+    ``None`` fields when neither pattern matches.
+    """
+    m = _SKU_RE.match(sku_name)
+    if m is not None:
+        return _build_sku_info(
+            sku_name=sku_name,
+            raw_family=m.group("family"),
+            vcpus_str=m.group("vcpus"),
+            suffix=m.group("suffix") or "",
+            version=m.group("version"),
+        )
+
+    m = _SKU_FALLBACK_RE.match(sku_name)
+    if m is not None:
+        return _build_sku_info(
+            sku_name=sku_name,
+            raw_family=m.group("family"),
+            vcpus_str=m.group("vcpus"),
+            suffix=m.group("suffix") or "",
+            version=m.group("version"),
+        )
+
+    return SkuInfo(sku_name=sku_name)

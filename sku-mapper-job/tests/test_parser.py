@@ -146,6 +146,107 @@ class TestParseSkuStandard:
         assert info.category == "hpc"
         assert "rdma" in info.workload_tags
 
+    # -- Constrained vCPU --
+
+    def test_d32_16s_v3(self) -> None:
+        info = parse_sku("Standard_D32-16s_v3")
+        assert info.tier == "Standard"
+        assert info.family == "D"
+        assert info.vcpus == 32
+        assert info.version == "v3"
+        assert info.category == "general"
+        assert "premium-storage" in info.workload_tags
+
+    def test_e128_32ads_v7(self) -> None:
+        info = parse_sku("Standard_E128-32ads_v7")
+        assert info.tier == "Standard"
+        assert info.family == "E"
+        assert info.vcpus == 128
+        assert info.version == "v7"
+        assert info.category == "memory"
+        assert "amd" in info.workload_tags
+
+    def test_ds14_8_v2(self) -> None:
+        info = parse_sku("Standard_DS14-8_v2")
+        assert info.tier == "Standard"
+        assert info.family == "D"
+        assert info.vcpus == 14
+        assert info.version == "v2"
+        assert info.category == "general"
+
+    def test_e16_4as_v7(self) -> None:
+        info = parse_sku("Standard_E16-4as_v7")
+        assert info.tier == "Standard"
+        assert info.family == "E"
+        assert info.vcpus == 16
+        assert info.version == "v7"
+        assert info.category == "memory"
+
+    # -- Space before version --
+
+    def test_d16a_space_v4(self) -> None:
+        info = parse_sku("Standard_D16a v4")
+        assert info.tier == "Standard"
+        assert info.family == "D"
+        assert info.vcpus == 16
+        assert info.version == "v4"
+        assert info.category == "general"
+        assert "amd" in info.workload_tags
+
+    def test_d96a_space_v4(self) -> None:
+        info = parse_sku("Standard_D96a v4")
+        assert info.tier == "Standard"
+        assert info.family == "D"
+        assert info.vcpus == 96
+        assert info.version == "v4"
+        assert info.category == "general"
+
+    # -- No vCPU digits --
+
+    def test_das_no_vcpus(self) -> None:
+        info = parse_sku("Standard_Das")
+        assert info.tier == "Standard"
+        assert info.family == "D"
+        assert info.vcpus is None
+        assert info.version is None
+        assert info.category == "general"
+        assert "amd" in info.workload_tags
+        assert "premium-storage" in info.workload_tags
+
+    # -- Compressed version (fallback regex) --
+
+    def test_dv21_fallback(self) -> None:
+        info = parse_sku("Standard_Dv21")
+        assert info.tier == "Standard"
+        assert info.family == "D"
+        assert info.vcpus == 1
+        assert info.version == "v2"
+        assert info.category == "general"
+
+    def test_dv214_fallback(self) -> None:
+        info = parse_sku("Standard_Dv214")
+        assert info.tier == "Standard"
+        assert info.family == "D"
+        assert info.vcpus == 14
+        assert info.version == "v2"
+        assert info.category == "general"
+
+    def test_dv25_fallback(self) -> None:
+        info = parse_sku("Standard_Dv25")
+        assert info.tier == "Standard"
+        assert info.family == "D"
+        assert info.vcpus == 5
+        assert info.version == "v2"
+        assert info.category == "general"
+
+    # -- Non-standard naming (still extracts family) --
+
+    def test_data_ertc(self) -> None:
+        info = parse_sku("Standard_Data_ERTC")
+        assert info.tier == "Standard"
+        assert info.family == "D"
+        assert info.category == "general"
+
 
 class TestParseSkuNonStandard:
     """Test cases for SKU names that don't match the Standard_ pattern."""
