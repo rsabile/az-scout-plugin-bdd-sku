@@ -15,14 +15,29 @@ from az_scout_bdd_sku.api_client import get_spot_price_history as _api_price_his
 from az_scout_bdd_sku.api_client import get_status as _api_status
 from az_scout_bdd_sku.api_client import v1_eviction_rates as _api_v1_eviction_rates
 from az_scout_bdd_sku.api_client import v1_eviction_rates_latest as _api_v1_eviction_rates_latest
+from az_scout_bdd_sku.api_client import (
+    v1_job_logs as _api_v1_job_logs,
+)
+from az_scout_bdd_sku.api_client import (
+    v1_jobs as _api_v1_jobs,
+)
 from az_scout_bdd_sku.api_client import v1_list_locations as _api_v1_list_locations
 from az_scout_bdd_sku.api_client import v1_list_skus as _api_v1_list_skus
 from az_scout_bdd_sku.api_client import v1_pricing_categories as _api_v1_pricing_categories
 from az_scout_bdd_sku.api_client import v1_pricing_cheapest as _api_v1_pricing_cheapest
 from az_scout_bdd_sku.api_client import v1_pricing_summary as _api_v1_pricing_summary
+from az_scout_bdd_sku.api_client import (
+    v1_pricing_summary_compare as _api_v1_pricing_summary_compare,
+)
 from az_scout_bdd_sku.api_client import v1_pricing_summary_latest as _api_v1_pricing_summary_latest
 from az_scout_bdd_sku.api_client import v1_pricing_summary_series as _api_v1_pricing_summary_series
 from az_scout_bdd_sku.api_client import v1_retail_prices as _api_v1_retail_prices
+from az_scout_bdd_sku.api_client import v1_retail_prices_compare as _api_v1_retail_prices_compare
+from az_scout_bdd_sku.api_client import v1_savings_plans as _api_v1_savings_plans
+from az_scout_bdd_sku.api_client import v1_sku_catalog as _api_v1_sku_catalog
+from az_scout_bdd_sku.api_client import v1_spot_detail as _api_v1_spot_detail
+from az_scout_bdd_sku.api_client import v1_spot_prices_series as _api_v1_spot_prices_series
+from az_scout_bdd_sku.api_client import v1_stats as _api_v1_stats
 from az_scout_bdd_sku.api_client import v1_status as _api_v1_status
 
 _NOT_CONFIGURED = {"error": "BDD-SKU API URL is not configured. Set it in the plugin settings."}
@@ -194,3 +209,129 @@ def v1_pricing_cheapest(
 ) -> dict[str, Any]:
     """Top N cheapest Azure regions from latest run, ranked by a pricing metric."""
     return _safe_call(_api_v1_pricing_cheapest, price_type, metric, category, limit)
+
+
+# ==================================================================
+# V1 SKU Catalog MCP tools
+# ==================================================================
+
+
+def v1_sku_catalog(
+    search: str = "",
+    category: str = "",
+    family: str = "",
+    min_vcpus: int | None = None,
+    max_vcpus: int | None = None,
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """Browse the full VM SKU catalog. Filter by search, category, family, vCPUs. Paginated."""
+    return _safe_call(
+        _api_v1_sku_catalog,
+        search=search,
+        category=category,
+        family=family,
+        min_vcpus=min_vcpus,
+        max_vcpus=max_vcpus,
+        limit=limit,
+        cursor=cursor,
+    )
+
+
+# ==================================================================
+# V1 Job & Logs MCP tools
+# ==================================================================
+
+
+def v1_jobs(
+    dataset: str = "",
+    status: str = "",
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """List ingestion job runs. Filter by dataset and status. Paginated (newest first)."""
+    return _safe_call(_api_v1_jobs, dataset=dataset, status=status, limit=limit, cursor=cursor)
+
+
+def v1_job_logs(
+    run_id: str,
+    level: str = "",
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """List log entries for a specific job run. Filter by level. Paginated (newest first)."""
+    return _safe_call(_api_v1_job_logs, run_id, level=level, limit=limit, cursor=cursor)
+
+
+# ==================================================================
+# V1 Spot series & detail MCP tools
+# ==================================================================
+
+
+def v1_spot_prices_series(
+    region: str,
+    sku: str,
+    os_type: str = "",
+    bucket: str = "day",
+) -> dict[str, Any]:
+    """Spot price time series from JSONB history, bucketed by day/week/month."""
+    return _safe_call(_api_v1_spot_prices_series, region, sku, os_type=os_type, bucket=bucket)
+
+
+def v1_spot_detail(
+    region: str,
+    sku: str,
+    os_type: str = "",
+) -> dict[str, Any]:
+    """Composite spot detail: latest price, eviction rate, and SKU catalog entry."""
+    return _safe_call(_api_v1_spot_detail, region, sku, os_type=os_type)
+
+
+# ==================================================================
+# V1 Retail compare & savings MCP tools
+# ==================================================================
+
+
+def v1_retail_prices_compare(
+    sku: str,
+    currency: str = "",
+    pricing_type: str = "",
+) -> dict[str, Any]:
+    """Compare a SKU's retail price across all regions, grouped by region."""
+    return _safe_call(
+        _api_v1_retail_prices_compare, sku, currency=currency, pricing_type=pricing_type
+    )
+
+
+def v1_savings_plans(
+    region: str = "",
+    sku: str = "",
+    currency: str = "",
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """Browse retail prices that include savings plan data. Paginated (keyset cursor)."""
+    return _safe_call(
+        _api_v1_savings_plans, region=region, sku=sku, currency=currency, limit=limit, cursor=cursor
+    )
+
+
+# ==================================================================
+# V1 Pricing compare & stats MCP tools
+# ==================================================================
+
+
+def v1_pricing_summary_compare(
+    regions: list[str],
+    price_type: str = "",
+    category: str = "",
+) -> dict[str, Any]:
+    """Compare pricing summaries across multiple regions from the latest run."""
+    return _safe_call(
+        _api_v1_pricing_summary_compare, regions, price_type=price_type, category=category
+    )
+
+
+def v1_stats() -> dict[str, Any]:
+    """Global dashboard stats: table row counts, distinct regions/SKUs, data freshness."""
+    return _safe_call(_api_v1_stats)

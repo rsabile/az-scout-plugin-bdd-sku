@@ -253,3 +253,187 @@ def v1_pricing_cheapest(
             "limit": limit,
         },
     )
+
+
+# ------------------------------------------------------------------
+# SKU catalog
+# ------------------------------------------------------------------
+
+
+def v1_sku_catalog(
+    *,
+    search: str = "",
+    category: str = "",
+    family: str = "",
+    min_vcpus: int | None = None,
+    max_vcpus: int | None = None,
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """GET /v1/skus/catalog — paginated VM SKU catalog."""
+    params: dict[str, Any] = {"limit": limit}
+    if search:
+        params["search"] = search
+    if category:
+        params["category"] = category
+    if family:
+        params["family"] = family
+    if min_vcpus is not None:
+        params["minVcpus"] = min_vcpus
+    if max_vcpus is not None:
+        params["maxVcpus"] = max_vcpus
+    if cursor:
+        params["cursor"] = cursor
+    return _get("/v1/skus/catalog", params)  # type: ignore[no-any-return]
+
+
+# ------------------------------------------------------------------
+# Jobs
+# ------------------------------------------------------------------
+
+
+def v1_jobs(
+    *,
+    dataset: str = "",
+    status: str = "",
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """GET /v1/jobs — paginated job runs (newest first)."""
+    params: dict[str, Any] = {"limit": limit}
+    if dataset:
+        params["dataset"] = dataset
+    if status:
+        params["status"] = status
+    if cursor:
+        params["cursor"] = cursor
+    return _get("/v1/jobs", params)  # type: ignore[no-any-return]
+
+
+def v1_job_logs(
+    run_id: str,
+    *,
+    level: str = "",
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """GET /v1/jobs/{run_id}/logs — paginated job logs (newest first)."""
+    params: dict[str, Any] = {"limit": limit}
+    if level:
+        params["level"] = level
+    if cursor:
+        params["cursor"] = cursor
+    return _get(f"/v1/jobs/{run_id}/logs", params)  # type: ignore[no-any-return]
+
+
+# ------------------------------------------------------------------
+# Spot price series
+# ------------------------------------------------------------------
+
+
+def v1_spot_prices_series(
+    region: str,
+    sku: str,
+    *,
+    os_type: str = "",
+    bucket: str = "day",
+) -> dict[str, Any]:
+    """GET /v1/spot/prices/series — spot price JSONB time series."""
+    params: dict[str, Any] = {"region": region, "sku": sku, "bucket": bucket}
+    if os_type:
+        params["osType"] = os_type
+    return _get("/v1/spot/prices/series", params)  # type: ignore[no-any-return]
+
+
+# ------------------------------------------------------------------
+# Retail prices compare
+# ------------------------------------------------------------------
+
+
+def v1_retail_prices_compare(
+    sku: str,
+    *,
+    currency: str = "",
+    pricing_type: str = "",
+) -> dict[str, Any]:
+    """GET /v1/retail/prices/compare — compare a SKU across all regions."""
+    params: dict[str, Any] = {"sku": sku}
+    if currency:
+        params["currency"] = currency
+    if pricing_type:
+        params["pricingType"] = pricing_type
+    return _get("/v1/retail/prices/compare", params)  # type: ignore[no-any-return]
+
+
+# ------------------------------------------------------------------
+# Spot detail (composite)
+# ------------------------------------------------------------------
+
+
+def v1_spot_detail(
+    region: str,
+    sku: str,
+    *,
+    os_type: str = "",
+) -> dict[str, Any]:
+    """GET /v1/spot/detail — composite spot detail."""
+    params: dict[str, Any] = {"region": region, "sku": sku}
+    if os_type:
+        params["osType"] = os_type
+    return _get("/v1/spot/detail", params)  # type: ignore[no-any-return]
+
+
+# ------------------------------------------------------------------
+# Savings plans
+# ------------------------------------------------------------------
+
+
+def v1_savings_plans(
+    *,
+    region: str = "",
+    sku: str = "",
+    currency: str = "",
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """GET /v1/retail/savings-plans — paginated savings plan data."""
+    params: dict[str, Any] = {"limit": limit}
+    if region:
+        params["region"] = region
+    if sku:
+        params["sku"] = sku
+    if currency:
+        params["currency"] = currency
+    if cursor:
+        params["cursor"] = cursor
+    return _get("/v1/retail/savings-plans", params)  # type: ignore[no-any-return]
+
+
+# ------------------------------------------------------------------
+# Pricing summary compare
+# ------------------------------------------------------------------
+
+
+def v1_pricing_summary_compare(
+    regions: list[str],
+    *,
+    price_type: str = "",
+    category: str = "",
+) -> dict[str, Any]:
+    """GET /v1/pricing/summary/compare — compare pricing across regions."""
+    params: dict[str, Any] = {"regions": regions}
+    if price_type:
+        params["priceType"] = price_type
+    if category:
+        params["category"] = category
+    return _get("/v1/pricing/summary/compare", params)  # type: ignore[no-any-return]
+
+
+# ------------------------------------------------------------------
+# Global stats
+# ------------------------------------------------------------------
+
+
+def v1_stats() -> dict[str, Any]:
+    """GET /v1/stats — global dashboard metrics."""
+    return _get("/v1/stats", {})  # type: ignore[no-any-return]

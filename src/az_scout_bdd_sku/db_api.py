@@ -963,3 +963,613 @@ async def list_pricing_cheapest(
         cur = await conn.execute(sql, params)
         rows = await cur.fetchall()
     return [_price_summary_row_to_dict(r) for r in rows]
+
+
+# ==================================================================
+# /v1/skus/catalog
+# ==================================================================
+
+_SKU_COLS = (
+    "sku_name, tier, family, series, version, vcpus,"
+    " sku_type, category, workload_tags, source,"
+    " first_seen_utc, last_seen_utc, updated_at_utc"
+)
+
+_SKU_SORT_COLS = ["sku_name"]
+
+_SKU_CURSOR_MAP: dict[str, str] = {"skuName": "sku_name"}
+
+
+def _sku_cursor_to_sql(payload: dict[str, Any]) -> tuple[str, list[Any]]:
+    mapped: dict[str, Any] = {}
+    for camel, col in _SKU_CURSOR_MAP.items():
+        if camel in payload:
+            mapped[col] = payload[camel]
+    return keyset_clause(_SKU_SORT_COLS, mapped)
+
+
+def _sku_row_to_dict(r: Any) -> dict[str, Any]:
+    return {
+        "skuName": r[0],
+        "tier": r[1],
+        "family": r[2],
+        "series": r[3],
+        "version": r[4],
+        "vcpus": r[5],
+        "skuType": r[6],
+        "category": r[7],
+        "workloadTags": list(r[8]) if r[8] else [],
+        "source": r[9],
+        "firstSeenUtc": r[10].isoformat() if r[10] else None,
+        "lastSeenUtc": r[11].isoformat() if r[11] else None,
+        "updatedAtUtc": r[12].isoformat() if r[12] else None,
+    }
+
+
+async def list_sku_catalog(
+    limit: int,
+    cursor_payload: dict[str, Any] | None,
+    *,
+    search: str | None = None,
+    category: str | None = None,
+    family: str | None = None,
+    min_vcpus: int | None = None,
+    max_vcpus: int | None = None,
+) -> list[dict[str, Any]]:
+    """Return VM SKU catalog entries, keyset-paginated."""
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if search:
+        clauses.append("sku_name ILIKE %s")
+        params.append(f"%{search}%")
+    if category:
+        clauses.append("category = %s")
+        params.append(category)
+    if family:
+        clauses.append("family = %s")
+        params.append(family)
+    if min_vcpus is not None:
+        clauses.append("vcpus >= %s")
+        params.append(min_vcpus)
+    if max_vcpus is not None:
+        clauses.append("vcpus <= %s")
+        params.append(max_vcpus)
+
+    if cursor_payload is not None:
+        ks_sql, ks_params = _sku_cursor_to_sql(cursor_payload)
+        clauses.append(ks_sql)
+        params.extend(ks_params)
+
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    order = ", ".join(_SKU_SORT_COLS)
+
+    sql = f"SELECT {_SKU_COLS} FROM vm_sku_catalog{where} ORDER BY {order} ASC LIMIT %s"
+    params.append(limit + 1)
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+    return [_sku_row_to_dict(r) for r in rows]
+
+
+# ==================================================================
+# /v1/jobs
+# ==================================================================
+
+_JOB_COLS = (
+    "run_id, dataset, status, started_at_utc, finished_at_utc,"
+    " items_read, items_written, error_message, details"
+)
+
+_JOB_SORT_COLS = ["started_at_utc", "run_id"]
+
+_JOB_CURSOR_MAP: dict[str, str] = {
+    "startedAtUtc": "started_at_utc",
+    "runId": "run_id",
+}
+
+
+def _job_cursor_to_sql(payload: dict[str, Any]) -> tuple[str, list[Any]]:
+    mapped: dict[str, Any] = {}
+    for camel, col in _JOB_CURSOR_MAP.items():
+        if camel in payload:
+            mapped[col] = payload[camel]
+    return keyset_clause(_JOB_SORT_COLS, mapped)
+
+
+def _job_row_to_dict(r: Any) -> dict[str, Any]:
+    return {
+        "runId": str(r[0]) if r[0] else None,
+        "dataset": r[1],
+        "status": r[2],
+        "startedAtUtc": r[3].isoformat() if r[3] else None,
+        "finishedAtUtc": r[4].isoformat() if r[4] else None,
+        "itemsRead": r[5],
+        "itemsWritten": r[6],
+        "errorMessage": r[7],
+        "details": r[8],
+    }
+
+
+async def list_jobs(
+    limit: int,
+    cursor_payload: dict[str, Any] | None,
+    *,
+    dataset: str | None = None,
+    status: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return job runs, keyset-paginated (newest first)."""
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if dataset:
+        clauses.append("dataset = %s")
+        params.append(dataset)
+    if status:
+        clauses.append("status = %s")
+        params.append(status)
+
+    if cursor_payload is not None:
+        ks_sql, ks_params = _job_cursor_to_sql(cursor_payload)
+        clauses.append(ks_sql)
+        params.extend(ks_params)
+
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    sql = (
+        f"SELECT {_JOB_COLS} FROM job_runs{where}"
+        " ORDER BY started_at_utc DESC, run_id DESC"
+        " LIMIT %s"
+    )
+    params.append(limit + 1)
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+    return [_job_row_to_dict(r) for r in rows]
+
+
+# ==================================================================
+# /v1/jobs/{run_id}/logs
+# ==================================================================
+
+_LOG_COLS = "id, run_id, ts_utc, level, message, context"
+
+_LOG_SORT_COLS = ["ts_utc", "id"]
+
+_LOG_CURSOR_MAP: dict[str, str] = {
+    "tsUtc": "ts_utc",
+    "id": "id",
+}
+
+
+def _log_cursor_to_sql(payload: dict[str, Any]) -> tuple[str, list[Any]]:
+    mapped: dict[str, Any] = {}
+    for camel, col in _LOG_CURSOR_MAP.items():
+        if camel in payload:
+            mapped[col] = payload[camel]
+    return keyset_clause(_LOG_SORT_COLS, mapped)
+
+
+def _log_row_to_dict(r: Any) -> dict[str, Any]:
+    return {
+        "id": r[0],
+        "runId": str(r[1]) if r[1] else None,
+        "tsUtc": r[2].isoformat() if r[2] else None,
+        "level": r[3],
+        "message": r[4],
+        "context": r[5],
+    }
+
+
+async def list_job_logs(
+    run_id: str,
+    limit: int,
+    cursor_payload: dict[str, Any] | None,
+    *,
+    level: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return logs for a specific job run, keyset-paginated (newest first)."""
+    clauses: list[str] = ["run_id = %s"]
+    params: list[Any] = [run_id]
+
+    if level:
+        clauses.append("level = %s")
+        params.append(level)
+
+    if cursor_payload is not None:
+        ks_sql, ks_params = _log_cursor_to_sql(cursor_payload)
+        clauses.append(ks_sql)
+        params.extend(ks_params)
+
+    where = " WHERE " + " AND ".join(clauses)
+
+    sql = f"SELECT {_LOG_COLS} FROM job_logs{where} ORDER BY ts_utc DESC, id DESC LIMIT %s"
+    params.append(limit + 1)
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+    return [_log_row_to_dict(r) for r in rows]
+
+
+# ==================================================================
+# /v1/spot/prices/series
+# ==================================================================
+
+
+async def spot_price_series(
+    region: str,
+    sku: str,
+    bucket: str,
+    *,
+    os_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """Denormalise JSONB price_history and aggregate by time bucket.
+
+    Returns time-bucketed average spot price series.
+    """
+    clauses = ["region = %s", "sku_name = %s"]
+    params: list[Any] = [region, sku]
+
+    if os_type:
+        clauses.append("os_type = %s")
+        params.append(os_type)
+
+    where = " WHERE " + " AND ".join(clauses)
+
+    # bucket is passed as a parameter, not interpolated
+    sql = (
+        "SELECT date_trunc(%s, (elem->>'timestamp')::timestamptz) AS bucket_ts,"
+        "  avg((elem->>'spotPrice')::numeric) AS avg_price,"
+        "  min((elem->>'spotPrice')::numeric) AS min_price,"
+        "  max((elem->>'spotPrice')::numeric) AS max_price,"
+        "  count(*) AS data_points"
+        f" FROM spot_price_history{where},"
+        "  jsonb_array_elements(price_history) AS elem"
+        " GROUP BY bucket_ts ORDER BY bucket_ts ASC"
+    )
+    params.insert(0, bucket)
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+    return [
+        {
+            "bucketTs": r[0].isoformat() if r[0] else None,
+            "avgPrice": float(r[1]) if r[1] is not None else None,
+            "minPrice": float(r[2]) if r[2] is not None else None,
+            "maxPrice": float(r[3]) if r[3] is not None else None,
+            "dataPoints": r[4],
+        }
+        for r in rows
+    ]
+
+
+# ==================================================================
+# /v1/retail/prices/compare
+# ==================================================================
+
+
+async def retail_prices_compare(
+    sku: str,
+    *,
+    currency: str | None = None,
+    pricing_type: str | None = None,
+) -> dict[str, Any]:
+    """Compare a SKU's retail price across regions.
+
+    Returns a dict keyed by region with price info per region.
+    """
+    clauses = ["arm_sku_name ILIKE %s"]
+    params: list[Any] = [f"%{sku}%"]
+
+    if currency:
+        clauses.append("currency_code = %s")
+        params.append(currency)
+    if pricing_type:
+        clauses.append("pricing_type = %s")
+        params.append(pricing_type)
+
+    where = " WHERE " + " AND ".join(clauses)
+
+    sql = (
+        "SELECT arm_region_name, arm_sku_name, sku_id, currency_code,"
+        "  pricing_type, reservation_term, retail_price, unit_price,"
+        "  unit_of_measure, effective_start_date"
+        f" FROM retail_prices_vm{where}"
+        " ORDER BY arm_region_name ASC, retail_price ASC"
+    )
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+
+    result: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        region_name = r[0]
+        entry = {
+            "armSkuName": r[1],
+            "skuId": r[2],
+            "currencyCode": r[3],
+            "pricingType": r[4],
+            "reservationTerm": r[5],
+            "retailPrice": float(r[6]) if r[6] is not None else None,
+            "unitPrice": float(r[7]) if r[7] is not None else None,
+            "unitOfMeasure": r[8],
+            "effectiveStartDate": r[9].isoformat() if r[9] else None,
+        }
+        result.setdefault(region_name, []).append(entry)
+    return result
+
+
+# ==================================================================
+# /v1/spot/detail
+# ==================================================================
+
+
+async def spot_detail(
+    region: str,
+    sku: str,
+    *,
+    os_type: str | None = None,
+) -> dict[str, Any]:
+    """Combine spot price, eviction rate, and SKU catalog data.
+
+    Returns raw data from all three sources for a specific SKU/region.
+    """
+    result: dict[str, Any] = {"region": region, "sku": sku}
+
+    # 1. Spot price history (latest record)
+    spot_clauses = ["region = %s", "sku_name = %s"]
+    spot_params: list[Any] = [region, sku]
+    if os_type:
+        spot_clauses.append("os_type = %s")
+        spot_params.append(os_type)
+
+    spot_sql = (
+        "SELECT sku_name, os_type, region, price_history, job_id, job_datetime"
+        " FROM spot_price_history"
+        f" WHERE {' AND '.join(spot_clauses)}"
+        " LIMIT 1"
+    )
+    async with get_conn() as conn:
+        cur = await conn.execute(spot_sql, spot_params)
+        row = await cur.fetchone()
+    if row:
+        result["spotPrice"] = {
+            "skuName": row[0],
+            "osType": row[1],
+            "region": row[2],
+            "priceHistory": row[3],
+            "jobId": row[4],
+            "jobDatetime": row[5].isoformat() if row[5] else None,
+        }
+    else:
+        result["spotPrice"] = None
+
+    # 2. Eviction rate (latest record)
+    eviction_sql = (
+        "SELECT sku_name, region, eviction_rate, job_id, job_datetime"
+        " FROM spot_eviction_rates"
+        " WHERE region = %s AND sku_name = %s"
+        " ORDER BY job_datetime DESC NULLS LAST"
+        " LIMIT 1"
+    )
+    async with get_conn() as conn:
+        cur = await conn.execute(eviction_sql, [region, sku])
+        row = await cur.fetchone()
+    if row:
+        result["evictionRate"] = {
+            "skuName": row[0],
+            "region": row[1],
+            "evictionRate": row[2],
+            "jobId": row[3],
+            "jobDatetime": row[4].isoformat() if row[4] else None,
+        }
+    else:
+        result["evictionRate"] = None
+
+    # 3. SKU catalog enrichment
+    catalog_sql = f"SELECT {_SKU_COLS} FROM vm_sku_catalog WHERE sku_name = %s"
+    async with get_conn() as conn:
+        cur = await conn.execute(catalog_sql, [sku])
+        row = await cur.fetchone()
+    result["catalog"] = _sku_row_to_dict(row) if row else None
+
+    return result
+
+
+# ==================================================================
+# /v1/retail/savings-plans
+# ==================================================================
+
+_SAVINGS_SORT_COLS = ["arm_region_name", "arm_sku_name", "sku_id"]
+
+_SAVINGS_CURSOR_MAP: dict[str, str] = {
+    "armRegionName": "arm_region_name",
+    "armSkuName": "arm_sku_name",
+    "skuId": "sku_id",
+}
+
+
+def _savings_cursor_to_sql(payload: dict[str, Any]) -> tuple[str, list[Any]]:
+    mapped: dict[str, Any] = {}
+    for camel, col in _SAVINGS_CURSOR_MAP.items():
+        if camel in payload:
+            mapped[col] = payload[camel]
+    return keyset_clause(_SAVINGS_SORT_COLS, mapped)
+
+
+def _savings_row_to_dict(r: Any) -> dict[str, Any]:
+    return {
+        "armRegionName": r[0],
+        "armSkuName": r[1],
+        "skuId": r[2],
+        "currencyCode": r[3],
+        "pricingType": r[4],
+        "retailPrice": float(r[5]) if r[5] is not None else None,
+        "unitPrice": float(r[6]) if r[6] is not None else None,
+        "savingsPlan": r[7],
+    }
+
+
+async def list_savings_plans(
+    limit: int,
+    cursor_payload: dict[str, Any] | None,
+    *,
+    region: str | None = None,
+    sku: str | None = None,
+    currency: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return retail prices that have savings plan data, keyset-paginated."""
+    clauses: list[str] = ["savings_plan IS NOT NULL"]
+    params: list[Any] = []
+
+    if region:
+        clauses.append("arm_region_name = %s")
+        params.append(region)
+    if sku:
+        clauses.append("arm_sku_name ILIKE %s")
+        params.append(f"%{sku}%")
+    if currency:
+        clauses.append("currency_code = %s")
+        params.append(currency)
+
+    if cursor_payload is not None:
+        ks_sql, ks_params = _savings_cursor_to_sql(cursor_payload)
+        clauses.append(ks_sql)
+        params.extend(ks_params)
+
+    where = " WHERE " + " AND ".join(clauses)
+    order = ", ".join(_SAVINGS_SORT_COLS)
+
+    sql = (
+        "SELECT arm_region_name, arm_sku_name, sku_id, currency_code,"
+        "  pricing_type, retail_price, unit_price, savings_plan"
+        f" FROM retail_prices_vm{where}"
+        f" ORDER BY {order} ASC"
+        " LIMIT %s"
+    )
+    params.append(limit + 1)
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+    return [_savings_row_to_dict(r) for r in rows]
+
+
+# ==================================================================
+# /v1/pricing/summary/compare
+# ==================================================================
+
+
+async def pricing_summary_compare(
+    regions: list[str],
+    *,
+    price_type: str | None = None,
+    metric: str | None = None,
+    category: str | None = None,
+) -> dict[str, Any]:
+    """Compare pricing summary across regions from the latest run.
+
+    Returns a dict keyed by region with aggregated pricing stats.
+    """
+    clauses = [
+        "run_id = (SELECT run_id FROM price_summary ORDER BY snapshot_utc DESC LIMIT 1)",
+        "region = ANY(%s::text[])",
+    ]
+    params: list[Any] = [regions]
+
+    if price_type:
+        clauses.append("price_type = %s")
+        params.append(price_type)
+    if category is not None:
+        clauses.append("COALESCE(category, '') = %s")
+        params.append(category)
+
+    where = " WHERE " + " AND ".join(clauses)
+
+    sql = f"SELECT {_PRICE_SUMMARY_COLS} FROM price_summary{where} ORDER BY region ASC"
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+
+    result: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        item = _price_summary_row_to_dict(r)
+        region_name = item["region"]
+        result.setdefault(region_name, []).append(item)
+    return result
+
+
+# ==================================================================
+# /v1/stats
+# ==================================================================
+
+
+async def get_global_stats() -> dict[str, Any]:
+    """Gather global dashboard metrics across all tables."""
+    stats: dict[str, Any] = {}
+
+    async with get_conn() as conn:
+        # Row counts
+        tables = [
+            ("retailPrices", "retail_prices_vm"),
+            ("spotPrices", "spot_price_history"),
+            ("evictionRates", "spot_eviction_rates"),
+            ("priceSummary", "price_summary"),
+            ("skuCatalog", "vm_sku_catalog"),
+            ("jobRuns", "job_runs"),
+            ("jobLogs", "job_logs"),
+        ]
+        counts: dict[str, int] = {}
+        for key, table in tables:
+            cur = await conn.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
+            row = await cur.fetchone()
+            counts[key] = row[0] if row else 0
+        stats["rowCounts"] = counts
+
+        # Distinct regions
+        cur = await conn.execute("SELECT COUNT(DISTINCT arm_region_name) FROM retail_prices_vm")
+        row = await cur.fetchone()
+        stats["distinctRegions"] = row[0] if row else 0
+
+        # Distinct SKUs
+        cur = await conn.execute("SELECT COUNT(*) FROM vm_sku_catalog")
+        row = await cur.fetchone()
+        stats["distinctSkus"] = row[0] if row else 0
+
+        # Latest job per dataset
+        cur = await conn.execute(
+            "SELECT dataset, MAX(started_at_utc) AS last_run,"
+            "  COUNT(*) AS total_runs"
+            " FROM job_runs"
+            " GROUP BY dataset ORDER BY dataset"
+        )
+        rows = await cur.fetchall()
+        stats["latestJobs"] = {
+            r[0]: {
+                "lastRun": r[1].isoformat() if r[1] else None,
+                "totalRuns": r[2],
+            }
+            for r in rows
+        }
+
+        # Data freshness (newest job_datetime per source table)
+        freshness: dict[str, str | None] = {}
+        for key, table in [
+            ("retail", "retail_prices_vm"),
+            ("spotPrices", "spot_price_history"),
+            ("evictionRates", "spot_eviction_rates"),
+        ]:
+            cur = await conn.execute(
+                f"SELECT MAX(job_datetime) FROM {table}"  # noqa: S608
+            )
+            row = await cur.fetchone()
+            freshness[key] = row[0].isoformat() if row and row[0] else None
+        stats["dataFreshness"] = freshness
+
+    return stats

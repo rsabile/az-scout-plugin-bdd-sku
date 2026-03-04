@@ -10,7 +10,7 @@ Plugin [az-scout](https://github.com/lrivallain/az-scout) qui met en cache les *
 │  (FastAPI :5001)   │ ──────▸ │  /plugins/bdd-sku/        │ ──────▸ │   (:5432)    │
 │                    │         │    /status                 │         │              │
 │  MCP server        │         │    /spot/eviction-rates    │         │ retail_prices│
-│  15 outils exposés │         │    /spot/eviction-rates/   │         │ spot_evict.  │
+│  24 outils exposés │         │    /spot/eviction-rates/   │         │ spot_evict.  │
 │                    │         │         history            │         │ spot_price_h.│
 │                    │         │    /spot/price-history     │         │ vm_sku_catal.│
 │                    │         │    /spot/price-history     │         │ job_runs     │
@@ -22,7 +22,7 @@ Plugin [az-scout](https://github.com/lrivallain/az-scout) qui met en cache les *
 │  azscout-api:8000  │  ◂── MSI token auth (Entra ID)
 │                    │
 │  /health           │
-│  /v1/*  (16 EP)    │
+│  /v1/*  (25 EP)    │
 │  /status, /spot/*  │
 └────────────────────┘
                                                                      ┌──────┴───────┐
@@ -227,6 +227,15 @@ Le plugin expose 4 outils sur le serveur MCP d'az-scout, utilisables par les LLM
 | `v1_pricing_summary_latest` | `region?`, `category?`, `priceType?`, `limit?`, `cursor?` | Résumés du dernier run (paginé) |
 | `v1_pricing_summary_series` | `region`, `priceType`, `bucket`, `metric?`, `category?` | Série temporelle d'une métrique de prix |
 | `v1_pricing_cheapest` | `priceType`, `metric?`, `category?`, `limit?` | Top N régions les moins chères |
+| `v1_sku_catalog` | `search?`, `category?`, `family?`, `min_vcpus?`, `max_vcpus?`, `limit?`, `cursor?` | Catalogue VM SKU complet (paginé) |
+| `v1_jobs` | `dataset?`, `status?`, `limit?`, `cursor?` | Job runs d'ingestion (paginé, plus récents d'abord) |
+| `v1_job_logs` | `run_id`, `level?`, `limit?`, `cursor?` | Logs d'un job run spécifique (paginé) |
+| `v1_spot_prices_series` | `region`, `sku`, `os_type?`, `bucket?` | Série temporelle prix Spot (JSONB dénormalisé) |
+| `v1_retail_prices_compare` | `sku`, `currency?`, `pricing_type?` | Comparer un SKU à travers toutes les régions |
+| `v1_spot_detail` | `region`, `sku`, `os_type?` | Détail Spot composite (prix + éviction + catalogue) |
+| `v1_savings_plans` | `region?`, `sku?`, `currency?`, `limit?`, `cursor?` | Prix retail avec données savings plan (paginé) |
+| `v1_pricing_summary_compare` | `regions`, `price_type?`, `category?` | Comparer résumés pricing entre régions |
+| `v1_stats` | *(aucun)* | Métriques globales du dashboard |
 
 ---
 
@@ -294,6 +303,15 @@ Les erreurs suivent `ErrorResponse` :
 | 14 | `/v1/pricing/summary/latest` | GET | Oui | Résumés du dernier run d'agrégation |
 | 15 | `/v1/pricing/summary/series` | GET | Non | Série temporelle (bucket=day\|week\|month, metric=avg\|median\|…) |
 | 16 | `/v1/pricing/summary/cheapest` | GET | Non | Top N régions les moins chères (dernier run) |
+| 17 | `/v1/skus/catalog` | GET | Oui | Catalogue VM SKU complet (catégorie, famille, vCPU, mémoire…) |
+| 18 | `/v1/jobs` | GET | Oui | Job runs d'ingestion (plus récents d'abord) |
+| 19 | `/v1/jobs/{run_id}/logs` | GET | Oui | Logs d'un job run spécifique |
+| 20 | `/v1/spot/prices/series` | GET | Non | Série temporelle prix Spot (JSONB dénormalisé, bucket=day\|week\|month) |
+| 21 | `/v1/retail/prices/compare` | GET | Non | Comparer un SKU à travers toutes les régions |
+| 22 | `/v1/spot/detail` | GET | Non | Détail Spot composite (prix + éviction + catalogue SKU) |
+| 23 | `/v1/retail/savings-plans` | GET | Oui | Prix retail avec données savings plan |
+| 24 | `/v1/pricing/summary/compare` | GET | Non | Comparer résumés de prix entre régions |
+| 25 | `/v1/stats` | GET | Non | Métriques globales : comptage tables, régions, SKUs, fraîcheur |
 
 ### Exemples curl
 
@@ -327,6 +345,33 @@ curl "http://localhost:5001/plugins/bdd-sku/v1/pricing/summary/series?region=eas
 
 # Top 5 régions les moins chères
 curl "http://localhost:5001/plugins/bdd-sku/v1/pricing/summary/cheapest?priceType=spot&metric=median&limit=5"
+
+# Catalogue SKU (filtré par catégorie)
+curl "http://localhost:5001/plugins/bdd-sku/v1/skus/catalog?category=General%20purpose&limit=50"
+
+# Jobs d'ingestion (erreurs seulement)
+curl "http://localhost:5001/plugins/bdd-sku/v1/jobs?status=error"
+
+# Logs d'un job
+curl "http://localhost:5001/plugins/bdd-sku/v1/jobs/a1b2c3d4-e5f6-7890-abcd-ef1234567890/logs?level=error"
+
+# Série prix Spot (bucket mensuel)
+curl "http://localhost:5001/plugins/bdd-sku/v1/spot/prices/series?region=eastus&sku=Standard_D2s_v3&bucket=month"
+
+# Comparer un SKU entre régions
+curl "http://localhost:5001/plugins/bdd-sku/v1/retail/prices/compare?sku=Standard_D2s_v3&currency=USD"
+
+# Détail Spot composite
+curl "http://localhost:5001/plugins/bdd-sku/v1/spot/detail?region=eastus&sku=Standard_D2s_v3"
+
+# Savings plans
+curl "http://localhost:5001/plugins/bdd-sku/v1/retail/savings-plans?region=eastus&limit=100"
+
+# Comparer pricing entre régions
+curl "http://localhost:5001/plugins/bdd-sku/v1/pricing/summary/compare?regions=eastus&regions=westeurope&priceType=spot"
+
+# Stats globales
+curl "http://localhost:5001/plugins/bdd-sku/v1/stats"
 ```
 
 > **Note :** `spot/prices` renvoie `price_history` tel quel (JSONB). Les paramètres `from`/`to` filtrent sur `job_datetime` (snapshot). Le mode `sample=hourly|daily` n'est pas encore implémenté (renvoie 501).

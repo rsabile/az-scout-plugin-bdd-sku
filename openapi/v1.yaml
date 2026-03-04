@@ -22,6 +22,12 @@ tags:
   - name: Eviction Rates
   - name: Pricing
     description: Pre-aggregated pricing summaries (retail & spot)
+  - name: SKU Catalog
+    description: Full VM SKU catalog from vm_sku_catalog
+  - name: Jobs
+    description: Ingestion job runs and logs
+  - name: Savings Plans
+    description: Retail prices with savings plan data
 
 # ====================================================================
 # Paths
@@ -402,6 +408,296 @@ paths:
                 $ref: "#/components/schemas/PricingSummaryListResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------------
+  # SKU Catalog
+  # ----------------------------------------------------------------
+  /v1/skus/catalog:
+    get:
+      operationId: listSkuCatalog
+      summary: Full VM SKU catalog with hardware specs
+      tags: [SKU Catalog]
+      parameters:
+        - $ref: "#/components/parameters/search"
+        - name: category
+          in: query
+          description: Filter by category
+          schema:
+            type: string
+        - name: family
+          in: query
+          description: Filter by family
+          schema:
+            type: string
+        - name: minVcpus
+          in: query
+          description: Minimum vCPU count
+          schema:
+            type: integer
+        - name: maxVcpus
+          in: query
+          description: Maximum vCPU count
+          schema:
+            type: integer
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Paginated SKU catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkuCatalogListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------------
+  # Jobs
+  # ----------------------------------------------------------------
+  /v1/jobs:
+    get:
+      operationId: listJobs
+      summary: Ingestion job runs (newest first)
+      tags: [Jobs]
+      parameters:
+        - name: dataset
+          in: query
+          description: "Filter by dataset: azure_pricing, azure_spot, sku_mapper, price_aggregator"
+          schema:
+            type: string
+            enum: [azure_pricing, azure_spot, sku_mapper, price_aggregator]
+        - name: status
+          in: query
+          description: "Filter by status: running, ok, error"
+          schema:
+            type: string
+            enum: [running, ok, error]
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Paginated job runs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/jobs/{run_id}/logs:
+    get:
+      operationId: listJobLogs
+      summary: Log entries for a specific job run (newest first)
+      tags: [Jobs]
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: Job run UUID
+          schema:
+            type: string
+            format: uuid
+        - name: level
+          in: query
+          description: "Filter by log level: info, warning, error"
+          schema:
+            type: string
+            enum: [info, warning, error]
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Paginated log entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobLogListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------------
+  # Spot price series & detail
+  # ----------------------------------------------------------------
+  /v1/spot/prices/series:
+    get:
+      operationId: getSpotPriceSeries
+      summary: Spot price time series aggregated by time bucket
+      tags: [Spot Prices]
+      parameters:
+        - name: region
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: sku
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/osType"
+        - $ref: "#/components/parameters/pricingBucket"
+      responses:
+        "200":
+          description: Time-bucketed spot price series
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpotPriceSeriesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/spot/detail:
+    get:
+      operationId: getSpotDetail
+      summary: Composite spot detail (price + eviction + catalog)
+      tags: [Spot Prices]
+      parameters:
+        - name: region
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: sku
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/osType"
+      responses:
+        "200":
+          description: Composite spot detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpotDetailResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------------
+  # Retail prices compare & savings plans
+  # ----------------------------------------------------------------
+  /v1/retail/prices/compare:
+    get:
+      operationId: getRetailPricesCompare
+      summary: Compare a SKU's retail price across all regions
+      tags: [Retail Prices]
+      parameters:
+        - name: sku
+          in: query
+          required: true
+          description: "SKU name or substring (ILIKE match)"
+          schema:
+            type: string
+        - $ref: "#/components/parameters/currency"
+        - name: pricingType
+          in: query
+          description: "Pricing type filter (e.g. Consumption)"
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Prices grouped by region
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetailPricesCompareResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/retail/savings-plans:
+    get:
+      operationId: listSavingsPlans
+      summary: Retail prices with savings plan data
+      tags: [Savings Plans]
+      parameters:
+        - $ref: "#/components/parameters/region"
+        - $ref: "#/components/parameters/sku"
+        - $ref: "#/components/parameters/currency"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Paginated savings plans
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavingsPlanListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------------
+  # Pricing summary compare
+  # ----------------------------------------------------------------
+  /v1/pricing/summary/compare:
+    get:
+      operationId: getPricingSummaryCompare
+      summary: Compare pricing summaries across regions
+      tags: [Pricing]
+      parameters:
+        - name: regions
+          in: query
+          required: true
+          description: "Regions to compare (repeat for multiple)"
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: priceType
+          in: query
+          description: "Price type: retail or spot"
+          schema:
+            type: string
+            enum: [retail, spot]
+        - name: category
+          in: query
+          description: Category filter
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Pricing summaries grouped by region
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricingSummaryCompareResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ----------------------------------------------------------------
+  # Global stats
+  # ----------------------------------------------------------------
+  /v1/stats:
+    get:
+      operationId: getStats
+      summary: Global dashboard metrics
+      tags: [Status]
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResponse"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -997,6 +1293,279 @@ components:
                   type: string
                 priceType:
                   type: string
+
+    # SKU catalog items & responses
+    SkuCatalogItem:
+      type: object
+      properties:
+        skuName:
+          type: string
+        category:
+          type: string
+          nullable: true
+        family:
+          type: string
+          nullable: true
+        vcpus:
+          type: integer
+          nullable: true
+        memoryGb:
+          type: number
+          nullable: true
+        maxDataDiskCount:
+          type: integer
+          nullable: true
+        osDiskSizeGb:
+          type: integer
+          nullable: true
+        gpuCount:
+          type: integer
+          nullable: true
+        gpuModel:
+          type: string
+          nullable: true
+        acceleratorType:
+          type: string
+          nullable: true
+        capabilities:
+          type: object
+          nullable: true
+
+    SkuCatalogListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkuCatalogItem"
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    # Job items & responses
+    JobItem:
+      type: object
+      properties:
+        runId:
+          type: string
+          format: uuid
+        dataset:
+          type: string
+        status:
+          type: string
+          enum: [running, ok, error]
+        startedAtUtc:
+          type: string
+          format: date-time
+        finishedAtUtc:
+          type: string
+          format: date-time
+          nullable: true
+        rowsAffected:
+          type: integer
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          nullable: true
+
+    JobListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobItem"
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    JobLogItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        runId:
+          type: string
+          format: uuid
+        tsUtc:
+          type: string
+          format: date-time
+        level:
+          type: string
+          enum: [info, warning, error]
+        message:
+          type: string
+
+    JobLogListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/JobLogItem"
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    # Spot price series
+    SpotPriceSeriesPoint:
+      type: object
+      properties:
+        bucketTs:
+          type: string
+          format: date-time
+        avgPrice:
+          type: number
+          nullable: true
+        minPrice:
+          type: number
+          nullable: true
+        maxPrice:
+          type: number
+          nullable: true
+        dataPoints:
+          type: integer
+
+    SpotPriceSeriesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpotPriceSeriesPoint"
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          allOf:
+            - $ref: "#/components/schemas/Meta"
+            - type: object
+              properties:
+                bucket:
+                  type: string
+                region:
+                  type: string
+                sku:
+                  type: string
+
+    # Spot detail
+    SpotDetailResponse:
+      type: object
+      properties:
+        item:
+          type: object
+          properties:
+            spotPrice:
+              type: object
+              nullable: true
+            evictionRate:
+              type: object
+              nullable: true
+            catalog:
+              type: object
+              nullable: true
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    # Retail prices compare
+    RetailPricesCompareResponse:
+      type: object
+      properties:
+        items:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/RetailPriceItem"
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          allOf:
+            - $ref: "#/components/schemas/Meta"
+            - type: object
+              properties:
+                sku:
+                  type: string
+                regionCount:
+                  type: integer
+
+    # Savings plans
+    SavingsPlanItem:
+      type: object
+      properties:
+        currencyCode:
+          type: string
+        armRegionName:
+          type: string
+        armSkuName:
+          type: string
+        skuId:
+          type: string
+        retailPrice:
+          type: number
+          nullable: true
+        savingsPlan:
+          type: object
+          nullable: true
+
+    SavingsPlanListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SavingsPlanItem"
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    # Pricing summary compare
+    PricingSummaryCompareResponse:
+      type: object
+      properties:
+        items:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/PricingSummaryItem"
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          allOf:
+            - $ref: "#/components/schemas/Meta"
+            - type: object
+              properties:
+                regionCount:
+                  type: integer
+
+    # Global stats
+    StatsResponse:
+      type: object
+      properties:
+        item:
+          type: object
+          properties:
+            tables:
+              type: object
+            distinctRegions:
+              type: integer
+            distinctSkus:
+              type: integer
+            latestJobs:
+              type: object
+            dataFreshness:
+              type: object
+        meta:
+          $ref: "#/components/schemas/Meta"
 
   # ------------------------------------------------------------------
   # Responses

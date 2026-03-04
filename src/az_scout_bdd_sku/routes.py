@@ -1013,5 +1013,349 @@ async def v1_pricing_summary_cheapest(
     return JSONResponse(content={"items": items, "page": page, "meta": meta})
 
 
+# ------------------------------------------------------------------
+# SKU catalog
+# ------------------------------------------------------------------
+
+
+@v1_router.get("/skus/catalog")
+async def v1_sku_catalog(
+    search: str | None = Query(None, description="Substring match on SKU name"),
+    category: str | None = Query(None, description="Filter by category"),
+    family: str | None = Query(None, description="Filter by family"),
+    minVcpus: int | None = Query(  # noqa: N803
+        None, description="Minimum vCPU count"
+    ),
+    maxVcpus: int | None = Query(  # noqa: N803
+        None, description="Maximum vCPU count"
+    ),
+    limit: int | None = Query(None, description="Page size (1-5000, default 1000)"),
+    cursor: str | None = Query(None, description="Opaque pagination cursor"),
+) -> JSONResponse:
+    """VM SKU catalog from vm_sku_catalog table (v1, paginated)."""
+    from az_scout_bdd_sku.db_api import list_sku_catalog
+    from az_scout_bdd_sku.pagination import InvalidCursorError, build_page, decode_cursor
+    from az_scout_bdd_sku.validation import ValidationError, parse_limit
+
+    try:
+        lim = parse_limit(limit)
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    cursor_payload: dict[str, Any] | None = None
+    if cursor:
+        try:
+            cursor_payload = decode_cursor(cursor)
+        except InvalidCursorError as exc:
+            return _error_response(400, "BAD_REQUEST", str(exc))
+
+    try:
+        items = await list_sku_catalog(
+            lim,
+            cursor_payload,
+            search=search,
+            category=category,
+            family=family,
+            min_vcpus=minVcpus,
+            max_vcpus=maxVcpus,
+        )
+    except Exception:
+        logger.exception("v1/skus/catalog error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    def _cursor_builder(it: dict[str, Any]) -> dict[str, Any]:
+        return {"skuName": it["skuName"]}
+
+    trimmed, page = build_page(items, lim, cursor_builder=_cursor_builder)
+    return JSONResponse(content={"items": trimmed, "page": page, "meta": _meta()})
+
+
+# ------------------------------------------------------------------
+# Jobs
+# ------------------------------------------------------------------
+
+
+@v1_router.get("/jobs")
+async def v1_jobs(
+    dataset: str | None = Query(None, description="Filter by dataset name"),
+    status: str | None = Query(None, description="Filter by status: running|ok|error"),
+    limit: int | None = Query(None, description="Page size (1-5000, default 1000)"),
+    cursor: str | None = Query(None, description="Opaque pagination cursor"),
+) -> JSONResponse:
+    """Job runs from job_runs table (v1, paginated, newest first)."""
+    from az_scout_bdd_sku.db_api import list_jobs
+    from az_scout_bdd_sku.pagination import InvalidCursorError, build_page, decode_cursor
+    from az_scout_bdd_sku.validation import (
+        ValidationError,
+        parse_limit,
+        validate_job_dataset,
+        validate_job_status,
+    )
+
+    try:
+        lim = parse_limit(limit)
+        ds_val = validate_job_dataset(dataset) if dataset else None
+        st_val = validate_job_status(status) if status else None
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    cursor_payload: dict[str, Any] | None = None
+    if cursor:
+        try:
+            cursor_payload = decode_cursor(cursor)
+        except InvalidCursorError as exc:
+            return _error_response(400, "BAD_REQUEST", str(exc))
+
+    try:
+        items = await list_jobs(lim, cursor_payload, dataset=ds_val, status=st_val)
+    except Exception:
+        logger.exception("v1/jobs error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    def _cursor_builder(it: dict[str, Any]) -> dict[str, Any]:
+        return {"startedAtUtc": it["startedAtUtc"], "runId": it["runId"]}
+
+    trimmed, page = build_page(items, lim, cursor_builder=_cursor_builder)
+    return JSONResponse(content={"items": trimmed, "page": page, "meta": _meta()})
+
+
+@v1_router.get("/jobs/{run_id}/logs")
+async def v1_job_logs(
+    run_id: str,
+    level: str | None = Query(None, description="Filter by level: info|warning|error"),
+    limit: int | None = Query(None, description="Page size (1-5000, default 1000)"),
+    cursor: str | None = Query(None, description="Opaque pagination cursor"),
+) -> JSONResponse:
+    """Job logs for a specific run (v1, paginated, newest first)."""
+    from az_scout_bdd_sku.db_api import list_job_logs
+    from az_scout_bdd_sku.pagination import InvalidCursorError, build_page, decode_cursor
+    from az_scout_bdd_sku.validation import (
+        ValidationError,
+        parse_limit,
+        validate_log_level,
+        validate_uuid,
+    )
+
+    try:
+        validate_uuid(run_id)
+        lim = parse_limit(limit)
+        lvl_val = validate_log_level(level) if level else None
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    cursor_payload: dict[str, Any] | None = None
+    if cursor:
+        try:
+            cursor_payload = decode_cursor(cursor)
+        except InvalidCursorError as exc:
+            return _error_response(400, "BAD_REQUEST", str(exc))
+
+    try:
+        items = await list_job_logs(run_id, lim, cursor_payload, level=lvl_val)
+    except Exception:
+        logger.exception("v1/jobs/%s/logs error", run_id)
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    def _cursor_builder(it: dict[str, Any]) -> dict[str, Any]:
+        return {"tsUtc": it["tsUtc"], "id": it["id"]}
+
+    trimmed, page = build_page(items, lim, cursor_builder=_cursor_builder)
+    return JSONResponse(content={"items": trimmed, "page": page, "meta": _meta()})
+
+
+# ------------------------------------------------------------------
+# Spot price series
+# ------------------------------------------------------------------
+
+
+@v1_router.get("/spot/prices/series")
+async def v1_spot_prices_series(
+    region: str = Query(..., description="Region (required)"),
+    sku: str = Query(..., description="SKU name (required)"),
+    osType: str | None = Query(None, description="OS type filter"),  # noqa: N803
+    bucket: str = Query("day", description="Time bucket: day|week|month"),
+) -> JSONResponse:
+    """Spot price history denormalised and aggregated by time bucket (v1)."""
+    from az_scout_bdd_sku.db_api import spot_price_series
+    from az_scout_bdd_sku.validation import (
+        ValidationError,
+        validate_pricing_bucket,
+    )
+
+    try:
+        bucket_val = validate_pricing_bucket(bucket)
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    try:
+        items = await spot_price_series(region, sku, bucket_val, os_type=osType)
+    except Exception:
+        logger.exception("v1/spot/prices/series error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    page = {"limit": len(items), "cursor": None, "hasMore": False}
+    meta = _meta({"bucket": bucket_val, "region": region, "sku": sku})
+    return JSONResponse(content={"items": items, "page": page, "meta": meta})
+
+
+# ------------------------------------------------------------------
+# Retail prices compare
+# ------------------------------------------------------------------
+
+
+@v1_router.get("/retail/prices/compare")
+async def v1_retail_prices_compare(
+    sku: str = Query(..., description="SKU name or substring (required)"),
+    currency: str | None = Query(None, description="Currency code filter (e.g. USD)"),
+    pricingType: str | None = Query(  # noqa: N803
+        None, description="Pricing type filter (e.g. Consumption)"
+    ),
+) -> JSONResponse:
+    """Compare a SKU's retail price across all regions (v1)."""
+    from az_scout_bdd_sku.db_api import retail_prices_compare
+
+    try:
+        items = await retail_prices_compare(sku, currency=currency, pricing_type=pricingType)
+    except Exception:
+        logger.exception("v1/retail/prices/compare error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    region_count = len(items)
+    page = {"limit": region_count, "cursor": None, "hasMore": False}
+    meta = _meta({"sku": sku, "regionCount": region_count})
+    return JSONResponse(content={"items": items, "page": page, "meta": meta})
+
+
+# ------------------------------------------------------------------
+# Spot detail (composite)
+# ------------------------------------------------------------------
+
+
+@v1_router.get("/spot/detail")
+async def v1_spot_detail(
+    region: str = Query(..., description="Region (required)"),
+    sku: str = Query(..., description="SKU name (required)"),
+    osType: str | None = Query(None, description="OS type filter"),  # noqa: N803
+) -> JSONResponse:
+    """Composite spot detail: spot price + eviction rate + SKU catalog (v1)."""
+    from az_scout_bdd_sku.db_api import spot_detail
+
+    try:
+        data = await spot_detail(region, sku, os_type=osType)
+    except Exception:
+        logger.exception("v1/spot/detail error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    page = {"limit": 1, "cursor": None, "hasMore": False}
+    return JSONResponse(content={"item": data, "page": page, "meta": _meta()})
+
+
+# ------------------------------------------------------------------
+# Savings plans
+# ------------------------------------------------------------------
+
+
+@v1_router.get("/retail/savings-plans")
+async def v1_savings_plans(
+    region: str | None = Query(None, description="Filter by region"),
+    sku: str | None = Query(None, description="Filter by SKU (substring)"),
+    currency: str | None = Query(None, description="Currency code filter"),
+    limit: int | None = Query(None, description="Page size (1-5000, default 1000)"),
+    cursor: str | None = Query(None, description="Opaque pagination cursor"),
+) -> JSONResponse:
+    """Retail prices with savings plan data (v1, paginated)."""
+    from az_scout_bdd_sku.db_api import list_savings_plans
+    from az_scout_bdd_sku.pagination import InvalidCursorError, build_page, decode_cursor
+    from az_scout_bdd_sku.validation import ValidationError, parse_limit
+
+    try:
+        lim = parse_limit(limit)
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    cursor_payload: dict[str, Any] | None = None
+    if cursor:
+        try:
+            cursor_payload = decode_cursor(cursor)
+        except InvalidCursorError as exc:
+            return _error_response(400, "BAD_REQUEST", str(exc))
+
+    try:
+        items = await list_savings_plans(
+            lim, cursor_payload, region=region, sku=sku, currency=currency
+        )
+    except Exception:
+        logger.exception("v1/retail/savings-plans error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    def _cursor_builder(it: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "armRegionName": it["armRegionName"],
+            "armSkuName": it["armSkuName"],
+            "skuId": it["skuId"],
+        }
+
+    trimmed, page = build_page(items, lim, cursor_builder=_cursor_builder)
+    return JSONResponse(content={"items": trimmed, "page": page, "meta": _meta()})
+
+
+# ------------------------------------------------------------------
+# Pricing summary compare
+# ------------------------------------------------------------------
+
+
+@v1_router.get("/pricing/summary/compare")
+async def v1_pricing_summary_compare(
+    regions: list[str] = Query(  # noqa: B008
+        ..., description="Regions to compare (multi-value, required)"
+    ),
+    priceType: str | None = Query(  # noqa: N803
+        None, description="Price type: retail|spot"
+    ),
+    category: str | None = Query(None, description="Category filter"),
+) -> JSONResponse:
+    """Compare pricing summary across regions from the latest run (v1)."""
+    from az_scout_bdd_sku.db_api import pricing_summary_compare
+    from az_scout_bdd_sku.validation import (
+        ValidationError,
+        validate_price_type,
+    )
+
+    try:
+        pt_val = validate_price_type(priceType) if priceType else None
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    try:
+        items = await pricing_summary_compare(regions, price_type=pt_val, category=category)
+    except Exception:
+        logger.exception("v1/pricing/summary/compare error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    region_count = len(items)
+    page = {"limit": region_count, "cursor": None, "hasMore": False}
+    meta = _meta({"regionCount": region_count})
+    return JSONResponse(content={"items": items, "page": page, "meta": meta})
+
+
+# ------------------------------------------------------------------
+# Global stats
+# ------------------------------------------------------------------
+
+
+@v1_router.get("/stats")
+async def v1_stats() -> JSONResponse:
+    """Global dashboard metrics across all tables (v1)."""
+    from az_scout_bdd_sku.db_api import get_global_stats
+
+    try:
+        data = await get_global_stats()
+    except Exception:
+        logger.exception("v1/stats error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    return JSONResponse(content={"item": data, "meta": _meta()})
+
+
 # Include v1 sub-router
 router.include_router(v1_router)

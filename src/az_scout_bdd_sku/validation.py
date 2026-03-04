@@ -6,6 +6,7 @@ so that route handlers stay thin.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 
@@ -178,3 +179,77 @@ def validate_metric(value: str) -> str:
     except ValueError as exc:
         allowed = ", ".join(sorted(_METRIC_ALIASES.keys()))
         raise ValidationError(f"Invalid metric '{value}', must be one of: {allowed}") from exc
+
+
+# ------------------------------------------------------------------
+# Job / log validators
+# ------------------------------------------------------------------
+
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+class JobStatus(StrEnum):
+    RUNNING = "running"
+    OK = "ok"
+    ERROR = "error"
+
+
+class JobDataset(StrEnum):
+    AZURE_PRICING = "azure_pricing"
+    AZURE_SPOT = "azure_spot"
+    SKU_MAPPER = "sku_mapper"
+    PRICE_AGGREGATOR = "price_aggregator"
+
+
+class LogLevel(StrEnum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+def validate_uuid(value: str) -> str:
+    """Validate UUID format. Raises ``ValidationError`` on invalid input."""
+    if not _UUID_RE.match(value):
+        raise ValidationError(f"Invalid UUID: {value}")
+    return value
+
+
+def validate_job_status(value: str) -> str:
+    """Validate and return a job status value.
+
+    Raises ``ValidationError`` on invalid input.
+    """
+    try:
+        return JobStatus(value.lower()).value
+    except ValueError as exc:
+        raise ValidationError(
+            f"Invalid status '{value}', must be one of: running, ok, error"
+        ) from exc
+
+
+def validate_job_dataset(value: str) -> str:
+    """Validate and return a job dataset value.
+
+    Raises ``ValidationError`` on invalid input.
+    """
+    try:
+        return JobDataset(value.lower()).value
+    except ValueError as exc:
+        allowed = ", ".join(d.value for d in JobDataset)
+        raise ValidationError(f"Invalid dataset '{value}', must be one of: {allowed}") from exc
+
+
+def validate_log_level(value: str) -> str:
+    """Validate and return a log level value.
+
+    Raises ``ValidationError`` on invalid input.
+    """
+    try:
+        return LogLevel(value.lower()).value
+    except ValueError as exc:
+        raise ValidationError(
+            f"Invalid level '{value}', must be one of: info, warning, error"
+        ) from exc
