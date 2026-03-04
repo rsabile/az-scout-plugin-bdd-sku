@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS retail_prices_vm (
     arm_sku_name        TEXT,
     reservation_term    TEXT,
     savings_plan        JSONB,
-    UNIQUE (currency_code, arm_region_name, sku_id, pricing_type, reservation_term)
+    UNIQUE (currency_code, arm_region_name, sku_id, pricing_type, reservation_term, job_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_retail_prices_vm_region

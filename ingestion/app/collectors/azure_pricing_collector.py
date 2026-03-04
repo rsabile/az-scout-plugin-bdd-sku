@@ -93,7 +93,7 @@ class AzurePricingCollector(BaseCollector):
                 arm_sku_name        TEXT,
                 reservation_term    TEXT,
                 savings_plan        JSONB,
-                UNIQUE (currency_code, arm_region_name, sku_id, pricing_type, reservation_term)
+                UNIQUE (currency_code, arm_region_name, sku_id, pricing_type, reservation_term, job_id)
             )
         """
 
@@ -275,28 +275,8 @@ class AzurePricingCollector(BaseCollector):
                                 %(isPrimaryMeterRegion)s, %(armSkuName)s,
                                 %(reservationTerm)s, %(savingsPlanJson)s
                             )
-                            ON CONFLICT (currency_code, arm_region_name, sku_id, pricing_type, reservation_term)
-                            DO UPDATE SET
-                                job_id               = EXCLUDED.job_id,
-                                job_datetime         = EXCLUDED.job_datetime,
-                                job_type             = EXCLUDED.job_type,
-                                tier_minimum_units   = EXCLUDED.tier_minimum_units,
-                                retail_price         = EXCLUDED.retail_price,
-                                unit_price           = EXCLUDED.unit_price,
-                                location             = EXCLUDED.location,
-                                effective_start_date = EXCLUDED.effective_start_date,
-                                meter_id             = EXCLUDED.meter_id,
-                                meter_name           = EXCLUDED.meter_name,
-                                product_id           = EXCLUDED.product_id,
-                                product_name         = EXCLUDED.product_name,
-                                sku_name             = EXCLUDED.sku_name,
-                                service_name         = EXCLUDED.service_name,
-                                service_id           = EXCLUDED.service_id,
-                                service_family       = EXCLUDED.service_family,
-                                unit_of_measure      = EXCLUDED.unit_of_measure,
-                                is_primary_meter_region = EXCLUDED.is_primary_meter_region,
-                                arm_sku_name         = EXCLUDED.arm_sku_name,
-                                savings_plan         = EXCLUDED.savings_plan
+                            ON CONFLICT (currency_code, arm_region_name, sku_id, pricing_type, reservation_term, job_id)
+                            DO NOTHING
                             """,
                             params,
                         )
