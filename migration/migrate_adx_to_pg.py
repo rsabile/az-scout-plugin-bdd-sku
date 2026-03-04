@@ -26,8 +26,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import psycopg2  # type: ignore[import-untyped]
+from psycopg2.extras import execute_values  # type: ignore[import-untyped]
 from azure.identity import DefaultAzureCredential
-from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
+from azure.kusto.data import ClientRequestProperties, KustoClient, KustoConnectionStringBuilder
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -36,7 +37,7 @@ DEFAULT_ADX_CLUSTER = (
     "https://az-pricing-tool-adx.germanywestcentral.kusto.windows.net"
 )
 DEFAULT_ADX_DATABASE = "pricing-metrics"
-DEFAULT_BATCH_SIZE = 1000
+DEFAULT_BATCH_SIZE = 5000
 MIGRATION_DATASET = "adx_migration"
 
 # ---------------------------------------------------------------------------
@@ -65,19 +66,7 @@ INSERT INTO retail_prices_vm (
     unit_of_measure, pricing_type,
     is_primary_meter_region, arm_sku_name,
     reservation_term, savings_plan
-) VALUES (
-    %(jobId)s, %(jobDateTime)s, %(jobType)s,
-    %(currencyCode)s, %(tierMinimumUnits)s,
-    %(retailPrice)s, %(unitPrice)s,
-    %(armRegionName)s, %(location)s,
-    %(effectiveStartDate)s,
-    %(meterId)s, %(meterName)s,
-    %(productId)s, %(skuId)s, %(productName)s, %(skuName)s,
-    %(serviceName)s, %(serviceId)s, %(serviceFamily)s,
-    %(unitOfMeasure)s, %(type)s,
-    %(isPrimaryMeterRegion)s, %(armSkuName)s,
-    %(reservationTerm)s, %(savingsPlanJson)s
-)
+) VALUES %s
 ON CONFLICT (currency_code, arm_region_name, sku_id, pricing_type, reservation_term, job_id)
 DO NOTHING
 """
@@ -125,15 +114,20 @@ def load_env_file() -> None:
 # ADX helpers
 # ---------------------------------------------------------------------------
 def create_adx_client(cluster_uri: str, tenant_id: str | None) -> KustoClient:
-    """Authenticate to ADX using DefaultAzureCredential."""
-    kwargs = {"exclude_managed_identity_credential": True}
+    """Authenticate to ADX using DefaultAzureCredential with auto-refresh."""
+    kwargs: dict[str, object] = {"exclude_managed_identity_credential": True}
     if tenant_id:
         kwargs["additionally_allowed_tenants"] = [tenant_id]
 
     credential = DefaultAzureCredential(**kwargs)
-    token = credential.get_token("https://help.kusto.windows.net/.default")
-    kcsb = KustoConnectionStringBuilder.with_aad_user_token_authentication(
-        cluster_uri, token.token,
+    scope = "https://help.kusto.windows.net/.default"
+
+    def token_provider() -> str:
+        """Called by the Kusto SDK each time a token is needed — auto-refreshes."""
+        return credential.get_token(scope).token
+
+    kcsb = KustoConnectionStringBuilder.with_token_provider(
+        cluster_uri, token_provider,
     )
     return KustoClient(kcsb)
 
@@ -162,7 +156,9 @@ def query_adx_job(
 ) -> list[dict[str, object]]:
     """Fetch all rows for a single ADX job. Returns list of dicts."""
     kql = f"pricing_metrics | where jobId == '{job_id}'"
-    response = client.execute(database, kql)
+    properties = ClientRequestProperties()
+    properties.set_option("notruncation", True)
+    response = client.execute(database, kql, properties)
     primary = response.primary_results[0]
 
     # Build column-index map from the result set
@@ -256,48 +252,49 @@ def update_job_run(
     conn.commit()
 
 
+def _row_to_tuple(item: dict[str, object]) -> tuple[object, ...]:
+    """Convert an ADX row dict to a VALUES tuple (25 columns)."""
+    savings_plan = item.get("savingsPlan")
+    return (
+        item.get("jobId"),
+        item.get("jobDateTime"),
+        item.get("jobType"),
+        item.get("currencyCode"),
+        item.get("tierMinimumUnits"),
+        item.get("retailPrice"),
+        item.get("unitPrice"),
+        item.get("armRegionName"),
+        item.get("location"),
+        item.get("effectiveStartDate"),
+        item.get("meterId"),
+        item.get("meterName"),
+        item.get("productId"),
+        item.get("skuId"),
+        item.get("productName"),
+        item.get("skuName"),
+        item.get("serviceName"),
+        item.get("serviceId"),
+        item.get("serviceFamily"),
+        item.get("unitOfMeasure"),
+        item.get("type"),
+        item.get("isPrimaryMeterRegion"),
+        item.get("armSkuName"),
+        item.get("reservationTerm"),
+        json.dumps(savings_plan) if savings_plan is not None else None,
+    )
+
+
 def ingest_batch(
     conn: "psycopg2.extensions.connection",
     items: list[dict[str, object]],
 ) -> int:
-    """Insert a batch of rows into retail_prices_vm. Returns rows written."""
-    written = 0
+    """Insert a batch of rows using execute_values (multi-row INSERT). Returns rows written."""
+    if not items:
+        return 0
+    values = [_row_to_tuple(item) for item in items]
     with conn.cursor() as cur:
-        for item in items:
-            savings_plan = item.get("savingsPlan")
-            savings_plan_json = (
-                json.dumps(savings_plan) if savings_plan is not None else None
-            )
-
-            params = {
-                "jobId": item.get("jobId"),
-                "jobDateTime": item.get("jobDateTime"),
-                "jobType": item.get("jobType"),
-                "currencyCode": item.get("currencyCode"),
-                "tierMinimumUnits": item.get("tierMinimumUnits"),
-                "retailPrice": item.get("retailPrice"),
-                "unitPrice": item.get("unitPrice"),
-                "armRegionName": item.get("armRegionName"),
-                "location": item.get("location"),
-                "effectiveStartDate": item.get("effectiveStartDate"),
-                "meterId": item.get("meterId"),
-                "meterName": item.get("meterName"),
-                "productId": item.get("productId"),
-                "skuId": item.get("skuId"),
-                "productName": item.get("productName"),
-                "skuName": item.get("skuName"),
-                "serviceName": item.get("serviceName"),
-                "serviceId": item.get("serviceId"),
-                "serviceFamily": item.get("serviceFamily"),
-                "unitOfMeasure": item.get("unitOfMeasure"),
-                "type": item.get("type"),
-                "isPrimaryMeterRegion": item.get("isPrimaryMeterRegion"),
-                "armSkuName": item.get("armSkuName"),
-                "reservationTerm": item.get("reservationTerm"),
-                "savingsPlanJson": savings_plan_json,
-            }
-            cur.execute(INSERT_SQL, params)
-            written += cur.rowcount  # 1 if inserted, 0 if conflict
+        execute_values(cur, INSERT_SQL, values, page_size=len(values))
+        written = cur.rowcount
     conn.commit()
     return written
 
