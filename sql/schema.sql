@@ -112,4 +112,37 @@ CREATE INDEX IF NOT EXISTS idx_spot_price_region
 CREATE INDEX IF NOT EXISTS idx_spot_price_sku
     ON spot_price_history (sku_name);
 
+-- ============================================================
+-- price_summary: pre-aggregated pricing stats per region/category
+-- ============================================================
+CREATE TABLE IF NOT EXISTS price_summary (
+    id              BIGSERIAL PRIMARY KEY,
+    run_id          UUID NOT NULL,
+    snapshot_utc    TIMESTAMPTZ NOT NULL,
+    region          TEXT NOT NULL,
+    category        TEXT,                           -- NULL = all categories (global)
+    price_type      TEXT NOT NULL,                  -- 'retail' | 'spot'
+    currency_code   TEXT NOT NULL DEFAULT 'USD',
+    avg_price       NUMERIC NOT NULL,
+    median_price    NUMERIC NOT NULL,
+    min_price       NUMERIC NOT NULL,
+    max_price       NUMERIC NOT NULL,
+    p10_price       NUMERIC NOT NULL,
+    p25_price       NUMERIC NOT NULL,
+    p75_price       NUMERIC NOT NULL,
+    p90_price       NUMERIC NOT NULL,
+    sku_count       INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_summary_region
+    ON price_summary (region);
+CREATE INDEX IF NOT EXISTS idx_price_summary_category
+    ON price_summary (category);
+CREATE INDEX IF NOT EXISTS idx_price_summary_snapshot
+    ON price_summary (snapshot_utc DESC);
+CREATE INDEX IF NOT EXISTS idx_price_summary_run
+    ON price_summary (run_id);
+CREATE INDEX IF NOT EXISTS idx_price_summary_type
+    ON price_summary (price_type);
+
 COMMIT;

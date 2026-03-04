@@ -545,6 +545,95 @@ resource "azurerm_container_app_job" "sku_mapper" {
 }
 
 # ---------------------------------------------------------------------
+# Container Apps Job – Price Aggregator (scheduled, after sku-mapper)
+# ---------------------------------------------------------------------
+resource "azurerm_container_app_job" "price_aggregator" {
+  name                         = "price-aggregator-job"
+  location                     = azurerm_resource_group.main.location
+  resource_group_name          = azurerm_resource_group.main.name
+  container_app_environment_id = azurerm_container_app_environment.main.id
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.ingestion_jobs.id]
+  }
+
+  replica_timeout_in_seconds = 1800
+  replica_retry_limit        = 3
+
+  schedule_trigger_config {
+    cron_expression          = var.price_aggregator_cron
+    parallelism              = 1
+    replica_completion_count = 1
+  }
+
+  template {
+    container {
+      name   = "price-aggregator-job"
+      image  = "${azurerm_container_registry.main.login_server}/price-aggregator-job:latest"
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "PGHOST"
+        value = azurerm_postgresql_flexible_server.main.fqdn
+      }
+
+      env {
+        name  = "PGPORT"
+        value = "5432"
+      }
+
+      env {
+        name  = "PGDATABASE"
+        value = var.postgres_db_name
+      }
+
+      env {
+        name  = "PGUSER"
+        value = var.postgres_admin_user
+      }
+
+      env {
+        name        = "PGPASSWORD"
+        secret_name = "pg-password"
+      }
+
+      env {
+        name  = "PGSSLMODE"
+        value = "require"
+      }
+
+      env {
+        name  = "LOG_LEVEL"
+        value = var.log_level
+      }
+
+      env {
+        name  = "PYTHONUNBUFFERED"
+        value = "1"
+      }
+    }
+  }
+
+  secret {
+    name  = "pg-password"
+    value = var.postgres_admin_password
+  }
+
+  registry {
+    server   = azurerm_container_registry.main.login_server
+    identity = azurerm_user_assigned_identity.ingestion_jobs.id
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "bdd-sku"
+    JobType     = "price-aggregator"
+  }
+}
+
+# ---------------------------------------------------------------------
 # Container App – API (always-on, auto-scaling)
 # ---------------------------------------------------------------------
 resource "azurerm_container_app" "api" {

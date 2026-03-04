@@ -20,6 +20,8 @@ tags:
   - name: Retail Prices
   - name: Spot Prices
   - name: Eviction Rates
+  - name: Pricing
+    description: Pre-aggregated pricing summaries (retail & spot)
 
 # ====================================================================
 # Paths
@@ -269,6 +271,140 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  # ----------------------------------------------------------------
+  # Pricing
+  # ----------------------------------------------------------------
+  /v1/pricing/categories:
+    get:
+      operationId: listPricingCategories
+      summary: Distinct pricing categories
+      tags: [Pricing]
+      parameters:
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Paginated list of categories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricingCategoryListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/pricing/summary:
+    get:
+      operationId: listPricingSummary
+      summary: Pre-aggregated price summaries with multi-value filters
+      tags: [Pricing]
+      parameters:
+        - $ref: "#/components/parameters/regionMulti"
+        - $ref: "#/components/parameters/categoryMulti"
+        - $ref: "#/components/parameters/priceTypeMulti"
+        - $ref: "#/components/parameters/snapshotSince"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Paginated price summary rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricingSummaryListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/pricing/summary/latest:
+    get:
+      operationId: listPricingSummaryLatest
+      summary: Price summaries from the latest aggregation run
+      tags: [Pricing]
+      parameters:
+        - $ref: "#/components/parameters/regionMulti"
+        - $ref: "#/components/parameters/categoryMulti"
+        - $ref: "#/components/parameters/priceTypeMulti"
+        - $ref: "#/components/parameters/limit"
+        - $ref: "#/components/parameters/cursor"
+      responses:
+        "200":
+          description: Paginated latest price summary rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricingSummaryListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/pricing/summary/series:
+    get:
+      operationId: getPricingSummarySeries
+      summary: Time-bucketed pricing metric evolution
+      tags: [Pricing]
+      parameters:
+        - name: region
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/priceType"
+        - $ref: "#/components/parameters/pricingBucket"
+        - $ref: "#/components/parameters/metric"
+        - name: category
+          in: query
+          description: Category filter (omit for global)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Time-bucketed series
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricingSeriesResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /v1/pricing/summary/cheapest:
+    get:
+      operationId: listPricingCheapest
+      summary: Top N cheapest regions from latest run
+      tags: [Pricing]
+      parameters:
+        - $ref: "#/components/parameters/priceType"
+        - $ref: "#/components/parameters/metric"
+        - name: category
+          in: query
+          description: Category filter (omit for global)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: "Max results (1–100, default 10)"
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        "200":
+          description: Cheapest regions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricingSummaryListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 # ====================================================================
 # Components
 # ====================================================================
@@ -371,6 +507,75 @@ components:
         type: string
         enum: [avg, min, max]
         default: avg
+
+    regionMulti:
+      name: region
+      in: query
+      description: Filter by region(s) — repeat for multiple values
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+
+    categoryMulti:
+      name: category
+      in: query
+      description: Filter by category(ies) — repeat for multiple values
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+
+    priceTypeMulti:
+      name: priceType
+      in: query
+      description: "Filter by price type(s): retail, spot — repeat for multiple"
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          enum: [retail, spot]
+
+    priceType:
+      name: priceType
+      in: query
+      required: true
+      description: "Price type: retail or spot"
+      schema:
+        type: string
+        enum: [retail, spot]
+
+    snapshotSince:
+      name: snapshotSince
+      in: query
+      description: "ISO datetime — snapshot_utc >= value"
+      schema:
+        type: string
+        format: date-time
+
+    pricingBucket:
+      name: bucket
+      in: query
+      required: true
+      description: "Time bucket: day, week, month"
+      schema:
+        type: string
+        enum: [day, week, month]
+
+    metric:
+      name: metric
+      in: query
+      description: "Pricing metric: avg, median (default), min, max, p10, p25, p75, p90"
+      schema:
+        type: string
+        enum: [avg, median, min, max, p10, p25, p75, p90]
+        default: median
 
   # ------------------------------------------------------------------
   # Schemas
@@ -675,6 +880,122 @@ components:
                 bucket:
                   type: string
                 agg:
+                  type: string
+
+    # Pricing items & responses
+    PricingCategoryItem:
+      type: object
+      properties:
+        category:
+          type: string
+          nullable: true
+      required: [category]
+
+    PricingSummaryItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        runId:
+          type: string
+          format: uuid
+        snapshotUtc:
+          type: string
+          format: date-time
+        region:
+          type: string
+        category:
+          type: string
+          nullable: true
+        priceType:
+          type: string
+          enum: [retail, spot]
+        currencyCode:
+          type: string
+        avgPrice:
+          type: number
+          nullable: true
+        medianPrice:
+          type: number
+          nullable: true
+        minPrice:
+          type: number
+          nullable: true
+        maxPrice:
+          type: number
+          nullable: true
+        p10Price:
+          type: number
+          nullable: true
+        p25Price:
+          type: number
+          nullable: true
+        p75Price:
+          type: number
+          nullable: true
+        p90Price:
+          type: number
+          nullable: true
+        skuCount:
+          type: integer
+
+    PricingSeriesPoint:
+      type: object
+      properties:
+        bucketTs:
+          type: string
+          format: date-time
+        value:
+          type: number
+          nullable: true
+        totalSkus:
+          type: integer
+        points:
+          type: integer
+
+    PricingCategoryListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PricingCategoryItem"
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    PricingSummaryListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PricingSummaryItem"
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    PricingSeriesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PricingSeriesPoint"
+        page:
+          $ref: "#/components/schemas/Page"
+        meta:
+          allOf:
+            - $ref: "#/components/schemas/Meta"
+            - type: object
+              properties:
+                bucket:
+                  type: string
+                metric:
+                  type: string
+                priceType:
                   type: string
 
   # ------------------------------------------------------------------

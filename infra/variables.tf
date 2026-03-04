@@ -107,6 +107,12 @@ variable "sku_mapper_cron" {
   default     = "0 4 * * *" # Daily at 04:00 UTC
 }
 
+variable "price_aggregator_cron" {
+  description = "Cron expression for the price aggregator job (UTC). Should run after sku-mapper."
+  type        = string
+  default     = "30 4 * * *" # Daily at 04:30 UTC
+}
+
 # ---------------------------------------------------------------------
 # API Container App
 # ---------------------------------------------------------------------

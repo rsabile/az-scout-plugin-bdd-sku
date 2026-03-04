@@ -785,5 +785,233 @@ async def v1_eviction_rates_latest(
     return JSONResponse(content={"items": items, "page": page, "meta": _meta()})
 
 
+# ------------------------------------------------------------------
+# Pricing summary
+# ------------------------------------------------------------------
+
+
+@v1_router.get("/pricing/categories")
+async def v1_pricing_categories(
+    limit: int | None = Query(None, description="Page size (1-5000, default 1000)"),
+    cursor: str | None = Query(None, description="Opaque pagination cursor"),
+) -> JSONResponse:
+    """Distinct category values from the price_summary table (v1, paginated)."""
+    from az_scout_bdd_sku.db_api import list_pricing_categories
+    from az_scout_bdd_sku.pagination import InvalidCursorError, build_page, decode_cursor
+    from az_scout_bdd_sku.validation import ValidationError, parse_limit
+
+    try:
+        lim = parse_limit(limit)
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    cursor_payload: dict[str, Any] | None = None
+    if cursor:
+        try:
+            cursor_payload = decode_cursor(cursor)
+        except InvalidCursorError as exc:
+            return _error_response(400, "BAD_REQUEST", str(exc))
+
+    try:
+        items = await list_pricing_categories(lim, cursor_payload)
+    except Exception:
+        logger.exception("v1/pricing/categories error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    trimmed, page = build_page(
+        items,
+        lim,
+        cursor_builder=lambda it: {"category": it["category"] or ""},
+    )
+    return JSONResponse(content={"items": trimmed, "page": page, "meta": _meta()})
+
+
+@v1_router.get("/pricing/summary")
+async def v1_pricing_summary(
+    region: list[str] | None = Query(None, description="Filter by region(s)"),  # noqa: B008
+    category: list[str] | None = Query(None, description="Filter by category(ies)"),  # noqa: B008
+    priceType: list[str] | None = Query(  # noqa: N803, B008
+        None, description="Filter by price type(s): retail, spot"
+    ),
+    snapshotSince: str | None = Query(  # noqa: N803
+        None, description="ISO datetime — snapshot_utc >= value"
+    ),
+    limit: int | None = Query(None, description="Page size (1-5000, default 1000)"),
+    cursor: str | None = Query(None, description="Opaque pagination cursor"),
+) -> JSONResponse:
+    """Price summary rows with multi-value filters (v1, paginated)."""
+    from az_scout_bdd_sku.db_api import list_pricing_summary
+    from az_scout_bdd_sku.pagination import InvalidCursorError, build_page, decode_cursor
+    from az_scout_bdd_sku.validation import ValidationError, parse_iso_dt, parse_limit
+
+    try:
+        lim = parse_limit(limit)
+        ss = parse_iso_dt(snapshotSince, param_name="snapshotSince")
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    cursor_payload: dict[str, Any] | None = None
+    if cursor:
+        try:
+            cursor_payload = decode_cursor(cursor)
+        except InvalidCursorError as exc:
+            return _error_response(400, "BAD_REQUEST", str(exc))
+
+    try:
+        items = await list_pricing_summary(
+            lim,
+            cursor_payload,
+            regions=region,
+            categories=category,
+            price_types=priceType,
+            snapshot_since=ss,
+        )
+    except Exception:
+        logger.exception("v1/pricing/summary error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    def _cursor_builder(it: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "region": it["region"],
+            "category": it["category"] or "",
+            "priceType": it["priceType"],
+            "id": it["id"],
+        }
+
+    trimmed, page = build_page(items, lim, cursor_builder=_cursor_builder)
+    return JSONResponse(content={"items": trimmed, "page": page, "meta": _meta()})
+
+
+@v1_router.get("/pricing/summary/latest")
+async def v1_pricing_summary_latest(
+    region: list[str] | None = Query(None, description="Filter by region(s)"),  # noqa: B008
+    category: list[str] | None = Query(None, description="Filter by category(ies)"),  # noqa: B008
+    priceType: list[str] | None = Query(  # noqa: N803, B008
+        None, description="Filter by price type(s): retail, spot"
+    ),
+    limit: int | None = Query(None, description="Page size (1-5000, default 1000)"),
+    cursor: str | None = Query(None, description="Opaque pagination cursor"),
+) -> JSONResponse:
+    """Price summary rows from the latest run only (v1, paginated)."""
+    from az_scout_bdd_sku.db_api import list_pricing_summary_latest
+    from az_scout_bdd_sku.pagination import InvalidCursorError, build_page, decode_cursor
+    from az_scout_bdd_sku.validation import ValidationError, parse_limit
+
+    try:
+        lim = parse_limit(limit)
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    cursor_payload: dict[str, Any] | None = None
+    if cursor:
+        try:
+            cursor_payload = decode_cursor(cursor)
+        except InvalidCursorError as exc:
+            return _error_response(400, "BAD_REQUEST", str(exc))
+
+    try:
+        items = await list_pricing_summary_latest(
+            lim,
+            cursor_payload,
+            regions=region,
+            categories=category,
+            price_types=priceType,
+        )
+    except Exception:
+        logger.exception("v1/pricing/summary/latest error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    def _cursor_builder(it: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "region": it["region"],
+            "category": it["category"] or "",
+            "priceType": it["priceType"],
+            "id": it["id"],
+        }
+
+    trimmed, page = build_page(items, lim, cursor_builder=_cursor_builder)
+    return JSONResponse(content={"items": trimmed, "page": page, "meta": _meta()})
+
+
+@v1_router.get("/pricing/summary/series")
+async def v1_pricing_summary_series(
+    region: str = Query(..., description="Region (required)"),
+    priceType: str = Query(..., description="Price type: retail|spot"),  # noqa: N803
+    bucket: str = Query(..., description="Time bucket: day|week|month"),
+    metric: str = Query("median", description="Metric: avg|median|min|max|p10|p25|p75|p90"),
+    category: str | None = Query(None, description="Category filter (omit for global)"),
+) -> JSONResponse:
+    """Time-bucketed pricing metric aggregation over runs (v1, not paginated)."""
+    from az_scout_bdd_sku.db_api import pricing_summary_series
+    from az_scout_bdd_sku.validation import (
+        ValidationError,
+        validate_metric,
+        validate_price_type,
+        validate_pricing_bucket,
+    )
+
+    try:
+        bucket_val = validate_pricing_bucket(bucket)
+        metric_val = validate_metric(metric)
+        pt_val = validate_price_type(priceType)
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    try:
+        items = await pricing_summary_series(
+            region,
+            pt_val,
+            bucket_val,
+            metric=metric_val,
+            category=category,
+        )
+    except Exception:
+        logger.exception("v1/pricing/summary/series error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    page = {"limit": len(items), "cursor": None, "hasMore": False}
+    meta = _meta({"bucket": bucket_val, "metric": metric_val, "priceType": pt_val})
+    return JSONResponse(content={"items": items, "page": page, "meta": meta})
+
+
+@v1_router.get("/pricing/summary/cheapest")
+async def v1_pricing_summary_cheapest(
+    priceType: str = Query("retail", description="Price type: retail|spot"),  # noqa: N803
+    metric: str = Query("median", description="Metric to rank by (default median)"),
+    category: str | None = Query(None, description="Category filter (omit for global)"),
+    limit: int | None = Query(None, description="Max results (default 10, max 100)"),
+) -> JSONResponse:
+    """Top N cheapest regions from the latest run, ranked by metric (v1)."""
+    from az_scout_bdd_sku.db_api import list_pricing_cheapest
+    from az_scout_bdd_sku.validation import (
+        ValidationError,
+        validate_metric,
+        validate_price_type,
+    )
+
+    try:
+        pt_val = validate_price_type(priceType)
+        metric_val = validate_metric(metric)
+    except ValidationError as exc:
+        return _error_response(400, "BAD_REQUEST", str(exc))
+
+    lim = min(max(limit or 10, 1), 100)
+
+    try:
+        items = await list_pricing_cheapest(
+            lim,
+            price_type=pt_val,
+            metric=metric_val,
+            category=category,
+        )
+    except Exception:
+        logger.exception("v1/pricing/summary/cheapest error")
+        return _error_response(500, "INTERNAL", "Query failed")
+
+    page = {"limit": lim, "cursor": None, "hasMore": False}
+    meta = _meta({"metric": metric_val, "priceType": pt_val})
+    return JSONResponse(content={"items": items, "page": page, "meta": meta})
+
+
 # Include v1 sub-router
 router.include_router(v1_router)

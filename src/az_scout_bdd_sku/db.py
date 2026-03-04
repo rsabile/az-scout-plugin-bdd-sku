@@ -46,6 +46,8 @@ async def ensure_pool() -> psycopg_pool.AsyncConnectionPool:
     global _pool
     if _pool is None:
         cfg = get_config().database
+        logger.debug("DSN (redacted password): host=%s port=%s db=%s user=%s ssl=%s auth=%s",
+                      cfg.host, cfg.port, cfg.dbname, cfg.user, cfg.sslmode, cfg.auth_method)
 
         kwargs: dict[str, Any] = {
             "conninfo": cfg.dsn,

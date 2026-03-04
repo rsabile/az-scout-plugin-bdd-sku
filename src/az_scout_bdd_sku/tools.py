@@ -17,6 +17,11 @@ from az_scout_bdd_sku.api_client import v1_eviction_rates as _api_v1_eviction_ra
 from az_scout_bdd_sku.api_client import v1_eviction_rates_latest as _api_v1_eviction_rates_latest
 from az_scout_bdd_sku.api_client import v1_list_locations as _api_v1_list_locations
 from az_scout_bdd_sku.api_client import v1_list_skus as _api_v1_list_skus
+from az_scout_bdd_sku.api_client import v1_pricing_categories as _api_v1_pricing_categories
+from az_scout_bdd_sku.api_client import v1_pricing_cheapest as _api_v1_pricing_cheapest
+from az_scout_bdd_sku.api_client import v1_pricing_summary as _api_v1_pricing_summary
+from az_scout_bdd_sku.api_client import v1_pricing_summary_latest as _api_v1_pricing_summary_latest
+from az_scout_bdd_sku.api_client import v1_pricing_summary_series as _api_v1_pricing_summary_series
 from az_scout_bdd_sku.api_client import v1_retail_prices as _api_v1_retail_prices
 from az_scout_bdd_sku.api_client import v1_status as _api_v1_status
 
@@ -123,3 +128,69 @@ def v1_eviction_rates_latest(
 ) -> dict[str, Any]:
     """Latest eviction rate per (region, sku_name). Not paginated."""
     return _safe_call(_api_v1_eviction_rates_latest, region, sku, limit)
+
+
+# ==================================================================
+# V1 Pricing MCP tools
+# ==================================================================
+
+
+def v1_pricing_categories(
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """List distinct pricing categories from pre-aggregated price summaries. Paginated."""
+    return _safe_call(_api_v1_pricing_categories, limit, cursor)
+
+
+def v1_pricing_summary(
+    region: str = "",
+    category: str = "",
+    price_type: str = "",
+    snapshot_since: str = "",
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """Query pre-aggregated price summaries with filters. Paginated (keyset cursor).
+
+    Filters: region, category, price_type (retail/spot), snapshot_since (ISO datetime).
+    Returns avg, median, min, max, and percentile prices per region/category.
+    """
+    return _safe_call(
+        _api_v1_pricing_summary, region, category, price_type, snapshot_since, limit, cursor
+    )
+
+
+def v1_pricing_summary_latest(
+    region: str = "",
+    category: str = "",
+    price_type: str = "",
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """Latest price summary snapshot (most recent aggregation run). Paginated."""
+    return _safe_call(_api_v1_pricing_summary_latest, region, category, price_type, limit, cursor)
+
+
+def v1_pricing_summary_series(
+    region: str,
+    price_type: str,
+    bucket: str,
+    metric: str = "median",
+    category: str = "",
+) -> dict[str, Any]:
+    """Time-bucketed pricing metric evolution over aggregation runs.
+
+    bucket: day|week|month.  metric: avg|median|min|max|p10|p25|p75|p90.
+    """
+    return _safe_call(_api_v1_pricing_summary_series, region, price_type, bucket, metric, category)
+
+
+def v1_pricing_cheapest(
+    price_type: str = "retail",
+    metric: str = "median",
+    category: str = "",
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Top N cheapest Azure regions from latest run, ranked by a pricing metric."""
+    return _safe_call(_api_v1_pricing_cheapest, price_type, metric, category, limit)

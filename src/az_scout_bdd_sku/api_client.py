@@ -157,3 +157,99 @@ def test_connection(url: str) -> dict[str, Any]:
         return {"ok": True, "status": data.get("status", "unknown")}
     except requests.RequestException as exc:
         return {"ok": False, "error": str(exc)}
+
+
+# ------------------------------------------------------------------
+# V1 pricing endpoints
+# ------------------------------------------------------------------
+
+
+def v1_pricing_categories(
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """GET /v1/pricing/categories — distinct pricing categories, paginated."""
+    return _get(  # type: ignore[no-any-return]
+        "/v1/pricing/categories",
+        {"limit": limit, "cursor": cursor},
+    )
+
+
+def v1_pricing_summary(
+    region: str = "",
+    category: str = "",
+    price_type: str = "",
+    snapshot_since: str = "",
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """GET /v1/pricing/summary — price summary rows, paginated."""
+    return _get(  # type: ignore[no-any-return]
+        "/v1/pricing/summary",
+        {
+            "region": region,
+            "category": category,
+            "priceType": price_type,
+            "snapshotSince": snapshot_since,
+            "limit": limit,
+            "cursor": cursor,
+        },
+    )
+
+
+def v1_pricing_summary_latest(
+    region: str = "",
+    category: str = "",
+    price_type: str = "",
+    limit: int = 1000,
+    cursor: str = "",
+) -> dict[str, Any]:
+    """GET /v1/pricing/summary/latest — latest run price summary, paginated."""
+    return _get(  # type: ignore[no-any-return]
+        "/v1/pricing/summary/latest",
+        {
+            "region": region,
+            "category": category,
+            "priceType": price_type,
+            "limit": limit,
+            "cursor": cursor,
+        },
+    )
+
+
+def v1_pricing_summary_series(
+    region: str,
+    price_type: str,
+    bucket: str,
+    metric: str = "median",
+    category: str = "",
+) -> dict[str, Any]:
+    """GET /v1/pricing/summary/series — time-bucketed pricing metric."""
+    return _get(  # type: ignore[no-any-return]
+        "/v1/pricing/summary/series",
+        {
+            "region": region,
+            "priceType": price_type,
+            "bucket": bucket,
+            "metric": metric,
+            "category": category,
+        },
+    )
+
+
+def v1_pricing_cheapest(
+    price_type: str = "retail",
+    metric: str = "median",
+    category: str = "",
+    limit: int = 10,
+) -> dict[str, Any]:
+    """GET /v1/pricing/summary/cheapest — N cheapest regions."""
+    return _get(  # type: ignore[no-any-return]
+        "/v1/pricing/summary/cheapest",
+        {
+            "priceType": price_type,
+            "metric": metric,
+            "category": category,
+            "limit": limit,
+        },
+    )

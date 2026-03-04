@@ -10,7 +10,7 @@ Plugin [az-scout](https://github.com/lrivallain/az-scout) qui met en cache les *
 │  (FastAPI :5001)   │ ──────▸ │  /plugins/bdd-sku/        │ ──────▸ │   (:5432)    │
 │                    │         │    /status                 │         │              │
 │  MCP server        │         │    /spot/eviction-rates    │         │ retail_prices│
-│  4 outils exposés  │         │    /spot/eviction-rates/   │         │ spot_evict.  │
+│  15 outils exposés │         │    /spot/eviction-rates/   │         │ spot_evict.  │
 │                    │         │         history            │         │ spot_price_h.│
 │                    │         │    /spot/price-history     │         │ vm_sku_catal.│
 │                    │         │    /spot/price-history     │         │ job_runs     │
@@ -22,7 +22,7 @@ Plugin [az-scout](https://github.com/lrivallain/az-scout) qui met en cache les *
 │  azscout-api:8000  │  ◂── MSI token auth (Entra ID)
 │                    │
 │  /health           │
-│  /v1/*  (11 EP)    │
+│  /v1/*  (16 EP)    │
 │  /status, /spot/*  │
 └────────────────────┘
                                                                      ┌──────┴───────┐
@@ -222,6 +222,11 @@ Le plugin expose 4 outils sur le serveur MCP d'az-scout, utilisables par les LLM
 | `v1_retail_prices` | `region?`, `sku?`, `currency?`, `limit?`, `cursor?` | Prix retail VM (paginé) |
 | `v1_eviction_rates` | `region?`, `sku?`, `limit?`, `cursor?` | Taux d'éviction Spot (paginé) |
 | `v1_eviction_rates_latest` | `region?`, `sku?`, `limit?` | Dernier taux d'éviction par (region, sku) |
+| `v1_pricing_categories` | `limit?`, `cursor?` | Catégories de pricing distinctes (paginé) |
+| `v1_pricing_summary` | `region?`, `category?`, `priceType?`, `snapshotSince?`, `limit?`, `cursor?` | Résumés de prix agrégés (multi-valeur, paginé) |
+| `v1_pricing_summary_latest` | `region?`, `category?`, `priceType?`, `limit?`, `cursor?` | Résumés du dernier run (paginé) |
+| `v1_pricing_summary_series` | `region`, `priceType`, `bucket`, `metric?`, `category?` | Série temporelle d'une métrique de prix |
+| `v1_pricing_cheapest` | `priceType`, `metric?`, `category?`, `limit?` | Top N régions les moins chères |
 
 ---
 
@@ -284,6 +289,11 @@ Les erreurs suivent `ErrorResponse` :
 | 9 | `/v1/spot/eviction-rates` | GET | Oui | Taux d'éviction Spot (filtres region, sku, updatedSince) |
 | 10 | `/v1/spot/eviction-rates/series` | GET | Non | Série temporelle agrégée (bucket=hour\|day\|week, agg=avg\|min\|max) |
 | 11 | `/v1/spot/eviction-rates/latest` | GET | Non | Dernier taux par (region, sku) |
+| 12 | `/v1/pricing/categories` | GET | Oui | Catégories de pricing distinctes |
+| 13 | `/v1/pricing/summary` | GET | Oui | Résumés agrégés (multi-valeur : region, category, priceType) |
+| 14 | `/v1/pricing/summary/latest` | GET | Oui | Résumés du dernier run d'agrégation |
+| 15 | `/v1/pricing/summary/series` | GET | Non | Série temporelle (bucket=day\|week\|month, metric=avg\|median\|…) |
+| 16 | `/v1/pricing/summary/cheapest` | GET | Non | Top N régions les moins chères (dernier run) |
 
 ### Exemples curl
 
@@ -302,6 +312,21 @@ curl "http://localhost:5001/plugins/bdd-sku/v1/spot/eviction-rates/series?region
 
 # Prix Spot (raw)
 curl "http://localhost:5001/plugins/bdd-sku/v1/spot/prices?region=westeurope&sku=Standard_D4s_v3"
+
+# Catégories pricing
+curl "http://localhost:5001/plugins/bdd-sku/v1/pricing/categories?limit=50"
+
+# Résumés pricing (multi-valeur region + priceType)
+curl "http://localhost:5001/plugins/bdd-sku/v1/pricing/summary?region=eastus&region=westeurope&priceType=spot&limit=100"
+
+# Dernier run pricing
+curl "http://localhost:5001/plugins/bdd-sku/v1/pricing/summary/latest?priceType=retail"
+
+# Série temporelle médiane, bucket mensuel
+curl "http://localhost:5001/plugins/bdd-sku/v1/pricing/summary/series?region=eastus&priceType=spot&bucket=month&metric=median"
+
+# Top 5 régions les moins chères
+curl "http://localhost:5001/plugins/bdd-sku/v1/pricing/summary/cheapest?priceType=spot&metric=median&limit=5"
 ```
 
 > **Note :** `spot/prices` renvoie `price_history` tel quel (JSONB). Les paramètres `from`/`to` filtrent sur `job_datetime` (snapshot). Le mode `sample=hourly|daily` n'est pas encore implémenté (renvoie 501).
@@ -628,7 +653,7 @@ api/
 |---|---|---|
 | Infra | `/health` | — |
 | Legacy (4) | `/status`, `/spot/eviction-rates`, `/spot/eviction-rates/history`, `/spot/price-history` | — |
-| v1 (11) | `/v1/status`, `/v1/locations`, `/v1/skus`, `/v1/currencies`, `/v1/os-types`, `/v1/retail/prices`, `/v1/retail/prices/latest`, `/v1/spot/prices`, `/v1/spot/eviction-rates`, `/v1/spot/eviction-rates/series`, `/v1/spot/eviction-rates/latest` | — |
+| v1 (16) | `/v1/status`, `/v1/locations`, `/v1/skus`, `/v1/currencies`, `/v1/os-types`, `/v1/retail/prices`, `/v1/retail/prices/latest`, `/v1/spot/prices`, `/v1/spot/eviction-rates`, `/v1/spot/eviction-rates/series`, `/v1/spot/eviction-rates/latest`, `/v1/pricing/categories`, `/v1/pricing/summary`, `/v1/pricing/summary/latest`, `/v1/pricing/summary/series`, `/v1/pricing/summary/cheapest` | — |
 
 > **Note :** En mode standalone, les routes sont montées à la racine (pas sous `/plugins/bdd-sku/`).
 

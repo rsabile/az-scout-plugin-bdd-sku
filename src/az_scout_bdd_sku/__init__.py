@@ -48,6 +48,11 @@ class BddSkuPlugin:
             v1_eviction_rates_latest,
             v1_list_locations,
             v1_list_skus,
+            v1_pricing_categories,
+            v1_pricing_cheapest,
+            v1_pricing_summary,
+            v1_pricing_summary_latest,
+            v1_pricing_summary_series,
             v1_retail_prices,
             v1_status,
         )
@@ -63,6 +68,11 @@ class BddSkuPlugin:
             v1_retail_prices,
             v1_eviction_rates,
             v1_eviction_rates_latest,
+            v1_pricing_categories,
+            v1_pricing_summary,
+            v1_pricing_summary_latest,
+            v1_pricing_summary_series,
+            v1_pricing_cheapest,
         ]
 
     def get_static_dir(self) -> Path | None:

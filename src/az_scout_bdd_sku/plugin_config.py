@@ -31,16 +31,25 @@ class DatabaseConfig:
     def dsn(self) -> str:
         from urllib.parse import quote
 
+        # TCP keepalive + connect timeout prevent indefinite hangs
+        # when Azure PG drops idle connections or firewall kills sockets.
+        _CONN_OPTS = (
+            "connect_timeout=10"
+            " keepalives=1 keepalives_idle=30"
+            " keepalives_interval=10 keepalives_count=5"
+        )
+
         if self.auth_method == "msi":
-            # Token-based auth: no password in DSN, supplied via callback
             return (
                 f"host={self.host} port={self.port} dbname={self.dbname}"
-                f" user={self.user} sslmode={self.sslmode}"
+                f" user={self.user} sslmode={self.sslmode} {_CONN_OPTS}"
             )
         return (
             f"postgresql://{quote(self.user, safe='')}:{quote(self.password, safe='')}"
             f"@{self.host}:{self.port}/{self.dbname}"
-            f"?sslmode={self.sslmode}"
+            f"?sslmode={self.sslmode}&connect_timeout=10"
+            f"&keepalives=1&keepalives_idle=30"
+            f"&keepalives_interval=10&keepalives_count=5"
         )
 
 

@@ -686,3 +686,280 @@ async def list_eviction_rates_latest(
         }
         for r in rows
     ]
+
+
+# ==================================================================
+# Pricing summary (price_summary table)
+# ==================================================================
+
+
+def _price_summary_row_to_dict(r: Any) -> dict[str, Any]:
+    """Map a price_summary row tuple to a camelCase dict."""
+    return {
+        "id": r[0],
+        "runId": str(r[1]),
+        "snapshotUtc": r[2].isoformat() if r[2] else None,
+        "region": r[3],
+        "category": r[4],
+        "priceType": r[5],
+        "currencyCode": r[6],
+        "avgPrice": float(r[7]) if r[7] is not None else None,
+        "medianPrice": float(r[8]) if r[8] is not None else None,
+        "minPrice": float(r[9]) if r[9] is not None else None,
+        "maxPrice": float(r[10]) if r[10] is not None else None,
+        "p10Price": float(r[11]) if r[11] is not None else None,
+        "p25Price": float(r[12]) if r[12] is not None else None,
+        "p75Price": float(r[13]) if r[13] is not None else None,
+        "p90Price": float(r[14]) if r[14] is not None else None,
+        "skuCount": r[15],
+    }
+
+
+_PRICE_SUMMARY_COLS = (
+    "id, run_id, snapshot_utc, region, category, price_type, currency_code,"
+    " avg_price, median_price, min_price, max_price,"
+    " p10_price, p25_price, p75_price, p90_price, sku_count"
+)
+
+_PRICING_SORT_COLS = ["region", "COALESCE(category,'')", "price_type", "id"]
+
+_PRICING_CURSOR_MAP: dict[str, str] = {
+    "region": "region",
+    "category": "COALESCE(category,'')",
+    "priceType": "price_type",
+    "id": "id",
+}
+
+
+def _pricing_cursor_to_sql(payload: dict[str, Any]) -> tuple[str, list[Any]]:
+    """Map camelCase cursor keys to SQL columns and build keyset clause."""
+    mapped: dict[str, Any] = {}
+    for camel, col in _PRICING_CURSOR_MAP.items():
+        if camel in payload:
+            mapped[col] = payload[camel]
+    return keyset_clause(_PRICING_SORT_COLS, mapped)
+
+
+# ------------------------------------------------------------------
+# /v1/pricing/categories
+# ------------------------------------------------------------------
+
+
+async def list_pricing_categories(
+    limit: int,
+    cursor_payload: dict[str, Any] | None,
+) -> list[dict[str, str | None]]:
+    """Return distinct category values from price_summary, keyset-paginated."""
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if cursor_payload is not None:
+        ks_sql, ks_params = keyset_clause(
+            ["category_sort"],
+            {"category_sort": cursor_payload.get("category", "")},
+        )
+        clauses.append(ks_sql.replace("category_sort", "COALESCE(category, '')"))
+        params.extend(ks_params)
+
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+
+    sql = (
+        "SELECT DISTINCT category FROM price_summary"
+        f"{where} ORDER BY COALESCE(category, '') ASC LIMIT %s"
+    )
+    params.append(limit + 1)
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+    return [{"category": r[0]} for r in rows]
+
+
+# ------------------------------------------------------------------
+# /v1/pricing/summary
+# ------------------------------------------------------------------
+
+
+async def list_pricing_summary(
+    limit: int,
+    cursor_payload: dict[str, Any] | None,
+    *,
+    regions: list[str] | None = None,
+    categories: list[str] | None = None,
+    price_types: list[str] | None = None,
+    snapshot_since: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Return price_summary rows with multi-value filters, keyset-paginated."""
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    if regions:
+        clauses.append("region = ANY(%s::text[])")
+        params.append(regions)
+    if categories:
+        clauses.append("COALESCE(category, '') = ANY(%s::text[])")
+        params.append(categories)
+    if price_types:
+        clauses.append("price_type = ANY(%s::text[])")
+        params.append(price_types)
+    if snapshot_since:
+        clauses.append("snapshot_utc >= %s")
+        params.append(snapshot_since)
+
+    if cursor_payload is not None:
+        ks_sql, ks_params = _pricing_cursor_to_sql(cursor_payload)
+        clauses.append(ks_sql)
+        params.extend(ks_params)
+
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    order = ", ".join(_PRICING_SORT_COLS)
+
+    sql = f"SELECT {_PRICE_SUMMARY_COLS} FROM price_summary{where} ORDER BY {order} ASC LIMIT %s"
+    params.append(limit + 1)
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+    return [_price_summary_row_to_dict(r) for r in rows]
+
+
+# ------------------------------------------------------------------
+# /v1/pricing/summary/latest
+# ------------------------------------------------------------------
+
+
+async def list_pricing_summary_latest(
+    limit: int,
+    cursor_payload: dict[str, Any] | None,
+    *,
+    regions: list[str] | None = None,
+    categories: list[str] | None = None,
+    price_types: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Return price_summary rows from the most recent run_id only."""
+    clauses = ["run_id = (SELECT run_id FROM price_summary ORDER BY snapshot_utc DESC LIMIT 1)"]
+    params: list[Any] = []
+
+    if regions:
+        clauses.append("region = ANY(%s::text[])")
+        params.append(regions)
+    if categories:
+        clauses.append("COALESCE(category, '') = ANY(%s::text[])")
+        params.append(categories)
+    if price_types:
+        clauses.append("price_type = ANY(%s::text[])")
+        params.append(price_types)
+
+    if cursor_payload is not None:
+        ks_sql, ks_params = _pricing_cursor_to_sql(cursor_payload)
+        clauses.append(ks_sql)
+        params.extend(ks_params)
+
+    where = " WHERE " + " AND ".join(clauses)
+    order = ", ".join(_PRICING_SORT_COLS)
+
+    sql = f"SELECT {_PRICE_SUMMARY_COLS} FROM price_summary{where} ORDER BY {order} ASC LIMIT %s"
+    params.append(limit + 1)
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+    return [_price_summary_row_to_dict(r) for r in rows]
+
+
+# ------------------------------------------------------------------
+# /v1/pricing/summary/series
+# ------------------------------------------------------------------
+
+_VALID_PRICING_BUCKETS = {"day", "week", "month"}
+_VALID_METRICS = {
+    "avg_price",
+    "median_price",
+    "min_price",
+    "max_price",
+    "p10_price",
+    "p25_price",
+    "p75_price",
+    "p90_price",
+}
+
+
+async def pricing_summary_series(
+    region: str,
+    price_type: str,
+    bucket: str,
+    *,
+    metric: str = "median_price",
+    category: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return time-bucketed aggregation of a pricing metric over runs."""
+    clauses = ["region = %s", "price_type = %s"]
+    params: list[Any] = [region, price_type]
+
+    if category is not None:
+        clauses.append("COALESCE(category, '') = %s")
+        params.append(category)
+    else:
+        clauses.append("category IS NULL")
+
+    where = " WHERE " + " AND ".join(clauses)
+
+    # bucket and metric are validated by caller so safe to interpolate
+    sql = (
+        f"SELECT date_trunc('{bucket}', snapshot_utc) AS bucket_ts,"
+        f"  avg({metric}) AS value,"
+        "  sum(sku_count) AS total_skus,"
+        "  count(*) AS points"
+        f" FROM price_summary{where}"
+        " GROUP BY bucket_ts ORDER BY bucket_ts ASC"
+    )
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+    return [
+        {
+            "bucketTs": r[0].isoformat() if r[0] else None,
+            "value": float(r[1]) if r[1] is not None else None,
+            "totalSkus": r[2],
+            "points": r[3],
+        }
+        for r in rows
+    ]
+
+
+# ------------------------------------------------------------------
+# /v1/pricing/summary/cheapest
+# ------------------------------------------------------------------
+
+
+async def list_pricing_cheapest(
+    limit: int,
+    *,
+    price_type: str = "retail",
+    metric: str = "median_price",
+    category: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return the N cheapest regions from the latest run, ranked by *metric*."""
+    clauses = [
+        "run_id = (SELECT run_id FROM price_summary ORDER BY snapshot_utc DESC LIMIT 1)",
+        "price_type = %s",
+    ]
+    params: list[Any] = [price_type]
+
+    if category is not None:
+        clauses.append("COALESCE(category, '') = %s")
+        params.append(category)
+    else:
+        clauses.append("category IS NULL")
+
+    where = " WHERE " + " AND ".join(clauses)
+
+    # metric is validated by caller so safe to interpolate
+    sql = f"SELECT {_PRICE_SUMMARY_COLS} FROM price_summary{where} ORDER BY {metric} ASC LIMIT %s"
+    params.append(limit)
+
+    async with get_conn() as conn:
+        cur = await conn.execute(sql, params)
+        rows = await cur.fetchall()
+    return [_price_summary_row_to_dict(r) for r in rows]

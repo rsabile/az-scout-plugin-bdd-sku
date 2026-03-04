@@ -98,3 +98,83 @@ def validate_sample(value: str) -> str:
         raise ValidationError(
             f"Invalid sample '{value}', must be one of: raw, hourly, daily"
         ) from exc
+
+
+# ------------------------------------------------------------------
+# Pricing summary validators
+# ------------------------------------------------------------------
+
+
+class PriceType(StrEnum):
+    RETAIL = "retail"
+    SPOT = "spot"
+
+
+class PricingBucket(StrEnum):
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+
+
+class PricingMetric(StrEnum):
+    AVG = "avg_price"
+    MEDIAN = "median_price"
+    MIN = "min_price"
+    MAX = "max_price"
+    P10 = "p10_price"
+    P25 = "p25_price"
+    P75 = "p75_price"
+    P90 = "p90_price"
+
+
+# Map user-facing short names to column names
+_METRIC_ALIASES: dict[str, str] = {
+    "avg": "avg_price",
+    "median": "median_price",
+    "min": "min_price",
+    "max": "max_price",
+    "p10": "p10_price",
+    "p25": "p25_price",
+    "p75": "p75_price",
+    "p90": "p90_price",
+}
+
+
+def validate_price_type(value: str) -> str:
+    """Validate and return a price type (retail/spot).
+
+    Raises ``ValidationError`` on invalid input.
+    """
+    try:
+        return PriceType(value.lower()).value
+    except ValueError as exc:
+        raise ValidationError(f"Invalid priceType '{value}', must be one of: retail, spot") from exc
+
+
+def validate_pricing_bucket(value: str) -> str:
+    """Validate and return a pricing bucket (day/week/month).
+
+    Raises ``ValidationError`` on invalid input.
+    """
+    try:
+        return PricingBucket(value.lower()).value
+    except ValueError as exc:
+        raise ValidationError(
+            f"Invalid bucket '{value}', must be one of: day, week, month"
+        ) from exc
+
+
+def validate_metric(value: str) -> str:
+    """Validate and return a metric column name.
+
+    Accepts both short names (``avg``, ``median``) and full column names
+    (``avg_price``, ``median_price``).  Raises ``ValidationError`` on invalid input.
+    """
+    lower = value.lower()
+    if lower in _METRIC_ALIASES:
+        return _METRIC_ALIASES[lower]
+    try:
+        return PricingMetric(lower).value
+    except ValueError as exc:
+        allowed = ", ".join(sorted(_METRIC_ALIASES.keys()))
+        raise ValidationError(f"Invalid metric '{value}', must be one of: {allowed}") from exc
