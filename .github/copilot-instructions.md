@@ -2,7 +2,7 @@
 
 ## Project overview
 
-`az-scout-plugin-bdd-sku` is an **az-scout plugin** — a lightweight HTTP client that proxies all requests to the standalone [az-scout-bdd-api](https://github.com/lrivallain/az-scout-bdd-api) REST API. It provides 24 MCP tools, a settings UI, and a data-exploration tab for Azure VM SKU pricing, spot eviction, and availability data.
+`az-scout-plugin-bdd-sku` is an **az-scout plugin** — a lightweight HTTP client that proxies all requests to the standalone [az-scout-bdd-api](https://github.com/rsabile/az_scout_bdd_api) REST API. It provides 24 MCP tools, a settings UI, and a data-exploration tab for Azure VM SKU pricing, spot eviction, and availability data.
 
 **This plugin contains NO database code, NO ingestion logic, and NO infrastructure.** It is purely a UI + MCP client.
 
@@ -173,8 +173,8 @@ uv run pytest
 | Repository | Purpose |
 |---|---|
 | [az-scout](https://github.com/lrivallain/az-scout) | Core application (plugin host) |
-| [az-scout-bdd-api](https://github.com/lrivallain/az-scout-bdd-api) | Standalone REST API (PostgreSQL) |
-| [az-scout-bdd-ingestion](https://github.com/lrivallain/az-scout-bdd-ingestion) | Ingestion pipelines + infrastructure |
+| [az-scout-bdd-api](https://github.com/rsabile/az_scout_bdd_api) | Standalone REST API (PostgreSQL) |
+| [az-scout-bdd-ingestion](https://github.com/rsabile/az-scout-bdd-ingestion) | Ingestion pipelines + infrastructure |
 
 ## Versioning
 
