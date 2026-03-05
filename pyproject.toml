@@ -3,7 +3,7 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
-name = "az-scout-bdd-sku"
+name = "az-scout-plugin-bdd-sku"
 dynamic = ["version"]
 description = "SKU DB Cache plugin for az-scout – VM pricing, spot prices & eviction rates"
 readme = "README.md"
