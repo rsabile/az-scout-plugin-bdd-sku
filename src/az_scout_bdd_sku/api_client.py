@@ -198,6 +198,7 @@ def v1_pricing_summary(
     snapshot_since: str = "",
     limit: int = 1000,
     cursor: str = "",
+    currency: str = "",
 ) -> dict[str, Any]:
     """GET /v1/pricing/summary — price summary rows, paginated."""
     return _get(  # type: ignore[no-any-return]
@@ -209,6 +210,7 @@ def v1_pricing_summary(
             "snapshotSince": snapshot_since,
             "limit": limit,
             "cursor": cursor,
+            "currency": currency,
         },
     )
 
@@ -219,6 +221,7 @@ def v1_pricing_summary_latest(
     price_type: str = "",
     limit: int = 1000,
     cursor: str = "",
+    currency: str = "",
 ) -> dict[str, Any]:
     """GET /v1/pricing/summary/latest — latest run price summary, paginated."""
     return _get(  # type: ignore[no-any-return]
@@ -229,6 +232,7 @@ def v1_pricing_summary_latest(
             "priceType": price_type,
             "limit": limit,
             "cursor": cursor,
+            "currency": currency,
         },
     )
 
@@ -239,6 +243,7 @@ def v1_pricing_summary_series(
     bucket: str,
     metric: str = "median",
     category: str = "",
+    currency: str = "",
 ) -> dict[str, Any]:
     """GET /v1/pricing/summary/series — time-bucketed pricing metric."""
     return _get(  # type: ignore[no-any-return]
@@ -249,6 +254,7 @@ def v1_pricing_summary_series(
             "bucket": bucket,
             "metric": metric,
             "category": category,
+            "currency": currency,
         },
     )
 
@@ -258,6 +264,7 @@ def v1_pricing_cheapest(
     metric: str = "median",
     category: str = "",
     limit: int = 10,
+    currency: str = "",
 ) -> dict[str, Any]:
     """GET /v1/pricing/summary/cheapest — N cheapest regions."""
     return _get(  # type: ignore[no-any-return]
@@ -267,6 +274,7 @@ def v1_pricing_cheapest(
             "metric": metric,
             "category": category,
             "limit": limit,
+            "currency": currency,
         },
     )
 
@@ -444,6 +452,7 @@ def v1_pricing_summary_compare(
     *,
     price_type: str = "",
     category: str = "",
+    currency: str = "",
 ) -> dict[str, Any]:
     """GET /v1/pricing/summary/compare — compare pricing across regions."""
     params: dict[str, Any] = {"regions": regions}
@@ -451,6 +460,8 @@ def v1_pricing_summary_compare(
         params["priceType"] = price_type
     if category:
         params["category"] = category
+    if currency:
+        params["currency"] = currency
     return _get("/v1/pricing/summary/compare", params)  # type: ignore[no-any-return]
 
 

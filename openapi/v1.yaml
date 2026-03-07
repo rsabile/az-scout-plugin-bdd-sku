@@ -309,6 +309,7 @@ paths:
         - $ref: "#/components/parameters/regionMulti"
         - $ref: "#/components/parameters/categoryMulti"
         - $ref: "#/components/parameters/priceTypeMulti"
+        - $ref: "#/components/parameters/currency"
         - $ref: "#/components/parameters/snapshotSince"
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
@@ -333,6 +334,7 @@ paths:
         - $ref: "#/components/parameters/regionMulti"
         - $ref: "#/components/parameters/categoryMulti"
         - $ref: "#/components/parameters/priceTypeMulti"
+        - $ref: "#/components/parameters/currency"
         - $ref: "#/components/parameters/limit"
         - $ref: "#/components/parameters/cursor"
       responses:
@@ -366,6 +368,7 @@ paths:
           description: Category filter (omit for global)
           schema:
             type: string
+        - $ref: "#/components/parameters/currency"
       responses:
         "200":
           description: Time-bucketed series
@@ -391,6 +394,7 @@ paths:
           description: Category filter (omit for global)
           schema:
             type: string
+        - $ref: "#/components/parameters/currency"
         - name: limit
           in: query
           description: "Max results (1–100, default 10)"
@@ -671,6 +675,7 @@ paths:
           description: Category filter
           schema:
             type: string
+        - $ref: "#/components/parameters/currency"
       responses:
         "200":
           description: Pricing summaries grouped by region

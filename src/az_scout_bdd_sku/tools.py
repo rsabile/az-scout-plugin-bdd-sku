@@ -201,14 +201,23 @@ def v1_pricing_summary(
     snapshot_since: str = "",
     limit: int = 1000,
     cursor: str = "",
+    currency: str = "",
 ) -> dict[str, Any]:
     """Query pre-aggregated price summaries with filters. Paginated (keyset cursor).
 
-    Filters: region, category, price_type (retail/spot), snapshot_since (ISO datetime).
+    Filters: region, category, price_type (retail/spot), currency (e.g. USD, EUR),
+    snapshot_since (ISO datetime).
     Returns avg, median, min, max, and percentile prices per region/category.
     """
     return _safe_call(
-        _api_v1_pricing_summary, region, category, price_type, snapshot_since, limit, cursor
+        _api_v1_pricing_summary,
+        region,
+        category,
+        price_type,
+        snapshot_since,
+        limit,
+        cursor,
+        currency,
     )
 
 
@@ -218,9 +227,18 @@ def v1_pricing_summary_latest(
     price_type: str = "",
     limit: int = 1000,
     cursor: str = "",
+    currency: str = "",
 ) -> dict[str, Any]:
     """Latest price summary snapshot (most recent aggregation run). Paginated."""
-    return _safe_call(_api_v1_pricing_summary_latest, region, category, price_type, limit, cursor)
+    return _safe_call(
+        _api_v1_pricing_summary_latest,
+        region,
+        category,
+        price_type,
+        limit,
+        cursor,
+        currency,
+    )
 
 
 def v1_pricing_summary_series(
@@ -229,12 +247,21 @@ def v1_pricing_summary_series(
     bucket: str,
     metric: str = "median",
     category: str = "",
+    currency: str = "",
 ) -> dict[str, Any]:
     """Time-bucketed pricing metric evolution over aggregation runs.
 
     bucket: day|week|month.  metric: avg|median|min|max|p10|p25|p75|p90.
     """
-    return _safe_call(_api_v1_pricing_summary_series, region, price_type, bucket, metric, category)
+    return _safe_call(
+        _api_v1_pricing_summary_series,
+        region,
+        price_type,
+        bucket,
+        metric,
+        category,
+        currency,
+    )
 
 
 def v1_pricing_cheapest(
@@ -242,9 +269,10 @@ def v1_pricing_cheapest(
     metric: str = "median",
     category: str = "",
     limit: int = 10,
+    currency: str = "",
 ) -> dict[str, Any]:
     """Top N cheapest Azure regions from latest run, ranked by a pricing metric."""
-    return _safe_call(_api_v1_pricing_cheapest, price_type, metric, category, limit)
+    return _safe_call(_api_v1_pricing_cheapest, price_type, metric, category, limit, currency)
 
 
 # ==================================================================
@@ -392,10 +420,15 @@ def v1_pricing_summary_compare(
     regions: list[str],
     price_type: str = "",
     category: str = "",
+    currency: str = "",
 ) -> dict[str, Any]:
     """Compare pricing summaries across multiple regions from the latest run."""
     return _safe_call(
-        _api_v1_pricing_summary_compare, regions, price_type=price_type, category=category
+        _api_v1_pricing_summary_compare,
+        regions,
+        price_type=price_type,
+        category=category,
+        currency=currency,
     )
 
 
